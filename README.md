@@ -29,8 +29,8 @@ lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
   [documentation/template-format.md](documentation/template-format.md).
 - **Built-in templates**: `plain`, `syslog` (RFC 3164), `syslog-iso`
   (rsyslog), `dmesg` (kernel), `serilog` (.NET), `python` (logging),
-  `apache` (common log format) — auto-detected when none is given
-  (`lx -l` lists them).
+  `macos` (unified log via `log show` / `log stream`), `apache` (common
+  log format) — auto-detected when none is given (`lx -l` lists them).
 - **Field filtering**: `:filter level==ERR || level==WRN`,
   `timestamp >= "2026-06-01 19:00:00"`, `status >= 500`,
   `message ~ timeout`, with `&& || ! ()` logic. Unparsed lines (stack

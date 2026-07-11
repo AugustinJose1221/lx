@@ -273,6 +273,10 @@ static int parse_field_attrs(Template *t, int fi, const char *val, char *err,
             sort_values_by_len(f);
         } else if (KEQ("unit")) {
             snprintf(f->unit, sizeof f->unit, "%s", vbuf);
+        } else if (KEQ("severity")) {
+            if (str_ieq(vbuf, "yes") || str_ieq(vbuf, "true") ||
+                !strcmp(vbuf, "1"))
+                t->level_field = fi;
         } else {
             snprintf(err, errsz, "field %s: unknown attribute '%.*s'",
                      f->name, (int)kl, ks);
@@ -581,8 +585,11 @@ int template_match(const Template *t, const char *s, size_t len, Span *fsp,
 int severity_class(const char *v, size_t n)
 {
     static const struct { const char *pat; int cls; } M[] = {
-        { "ftl", 5 }, { "fatal", 5 }, { "crit", 5 }, { "emerg", 5 },
-        { "alert", 5 }, { "panic", 5 },
+        /* "default" (macOS unified log) must precede "fault": the
+         * substring match would otherwise classify it as fatal */
+        { "default", 2 },
+        { "ftl", 5 }, { "fatal", 5 }, { "fault", 5 }, { "crit", 5 },
+        { "emerg", 5 }, { "alert", 5 }, { "panic", 5 },
         { "err", 4 },
         { "wrn", 3 }, { "warn", 3 },
         { "inf", 2 }, { "notice", 2 },
@@ -641,6 +648,18 @@ static const char *BI_TEXTS[] = {
     "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S,%f\"\n"
     "field logger: type=word\n"
     "field level: type=enum values=DEBUG|INFO|WARNING|ERROR|CRITICAL\n"
+    "field message: type=string\n",
+
+    "name: macos\n"
+    "description: macOS unified log, as printed by 'log show' / 'log stream'\n"
+    "entry: %{timestamp} %{thread} %{type} %{activity} %{pid} %{ttl} %{process}: %{message}\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z\"\n"
+    "field thread: type=word\n"
+    "field type: type=enum values=Default|Info|Debug|Error|Fault severity=yes\n"
+    "field activity: type=word\n"
+    "field pid: type=int\n"
+    "field ttl: type=int\n"
+    "field process: type=word\n"
     "field message: type=string\n",
 
     "name: apache\n"

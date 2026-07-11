@@ -58,12 +58,13 @@ filters on those names.
 
 ## Field attributes
 
-| attribute  | applies to  | meaning                                          |
-|------------|-------------|--------------------------------------------------|
-| `type=`    | all         | `string`, `word`, `int`, `float`, `timestamp`, `enum` |
-| `format=`  | timestamp   | timestamp layout (see directives below); quoted since it contains spaces. Setting `format=` implies `type=timestamp`. |
-| `values=`  | enum        | allowed values, separated by `\|` (or commas inside quotes). Setting `values=` implies `type=enum`. |
-| `unit=`    | int, float  | informational unit (`s`, `ms`, `bytes`, ...); shown in the Enter field inspector. |
+| attribute   | applies to  | meaning                                          |
+|-------------|-------------|--------------------------------------------------|
+| `type=`     | all         | `string`, `word`, `int`, `float`, `timestamp`, `enum` |
+| `format=`   | timestamp   | timestamp layout (see directives below); quoted since it contains spaces. Setting `format=` implies `type=timestamp`. |
+| `values=`   | enum        | allowed values, separated by `\|` (or commas inside quotes). Setting `values=` implies `type=enum`. |
+| `unit=`     | int, float  | informational unit (`s`, `ms`, `bytes`, ...); shown in the Enter field inspector. |
+| `severity=` | all         | `severity=yes` marks this field as the severity field driving per-line colouring, when its name alone (`level`, `severity`, ...) would not identify it — e.g. the `type` column of the macOS unified log. |
 
 ### Field types
 

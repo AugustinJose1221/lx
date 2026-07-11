@@ -1,0 +1,7 @@
+Timestamp                       Thread     Type        Activity             PID    TTL
+2026-06-01 19:18:23.123456+0200 0x16b3     Default     0x0                  0      0    kernel: en0: link up
+2026-06-01 19:18:23.223456+0200 0x16b4     Info        0x0                  345    0    loginwindow: (libsystemstats.dylib) recording enabled
+2026-06-01 19:18:24.001002+0200 0x16b5     Error       0x0                  501    0    mDNSResponder: (mDNSResponder) SendResponses failed
+2026-06-01 19:18:24.500000+0200 0x16b9     Debug       0x0                  501    0    Safari: page load started
+2026-06-01 19:18:25.000001+0200 0x16c1     Fault       0x0                  120    0    WindowServer: (SkyLight) fatal surface error
+2026-06-01 19:18:26.750000+0200 0x16b3     Default     0x0                  0      0    kernel: AppleThunderboltNHIType3: power state changed

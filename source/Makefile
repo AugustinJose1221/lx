@@ -47,7 +47,7 @@ $(BUILD)/tests/%: ../tests/%.c $(LIBOBJ)
 	@mkdir -p $(BUILD)/tests
 	$(CC) $(CSTD) $(WARN) $(OPT) $(DEFS) -I. -I../tests $< $(LIBOBJ) -o $@
 
-test: $(TESTBIN)
+test: $(BIN) $(TESTBIN)
 	@set -e; for t in $(TESTBIN); do $$t; done; echo "all tests passed"
 
 install: $(BIN)

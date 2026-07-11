@@ -79,6 +79,15 @@ Python logging:
 \fI2026\-06\-01 19:18:23,123 \- logger \- INFO \- message\fR.
 Fields: timestamp, logger, level, message.
 .TP
+.B macos
+macOS unified log, as printed by
+.B "log show"
+or
+.BR "log stream" :
+\fI2026\-06\-01 19:18:23.123456+0200 0x16b3 Default 0x0 501 0 proc: message\fR.
+Fields: timestamp, thread, type (Default Info Debug Error Fault),
+activity, pid, ttl, process, message.
+.TP
 .B apache
 Apache/nginx common log format. Fields: host, ident, user, timestamp,
 request, status, size.

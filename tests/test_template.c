@@ -70,6 +70,24 @@ int main(void)
     line = "2026-06-01 19:18:23,123 - app.db - INFORMAL - hello";
     OK(template_match(t, line, strlen(line), sp, fn) == 0);
 
+    /* --- macos: unified log via 'log show' -------------------------- */
+    t = template_builtin("macos");
+    OK(t != NULL);
+    line = "2026-06-01 19:18:23.123456+0200 0x16b3     Default     0x0"
+           "                  0      0    kernel: en0: link up";
+    OK(template_match(t, line, strlen(line), sp, fn) == 1);
+    OK(span_eq(line, sp[template_field_index(t, "type", 4)], "Default"));
+    OK(span_eq(line, sp[template_field_index(t, "process", 7)], "kernel"));
+    OK(span_eq(line, sp[template_field_index(t, "message", 7)],
+               "en0: link up"));
+    OK(fabs(fn[template_field_index(t, "pid", 3)] - 0.0) < 1e-9);
+    /* 'severity=yes' marks 'type' as the severity field */
+    OK(t->level_field == template_field_index(t, "type", 4));
+    /* the column header line must not match */
+    line = "Timestamp                       Thread     Type        "
+           "Activity             PID    TTL";
+    OK(template_match(t, line, strlen(line), sp, fn) == 0);
+
     /* --- custom template parsing ------------------------------------ */
     {
         Template c;
@@ -134,6 +152,16 @@ int main(void)
         OK(!strcmp(d->name, "plain"));
     }
 
+    /* --- explicit severity= attribute --------------------------------- */
+    {
+        Template c;
+        const char *def = "entry: %{kind} %{message}\n"
+                          "field kind: type=enum values=OK|BAD severity=yes\n";
+        OK(template_parse_text(&c, def, err, sizeof err) == 0);
+        OK(c.level_field == template_field_index(&c, "kind", 4));
+        template_free(&c);
+    }
+
     /* --- severity classes -------------------------------------------- */
     OK(severity_class("ERR", 3) == 4);
     OK(severity_class("error", 5) == 4);
@@ -143,6 +171,8 @@ int main(void)
     OK(severity_class("debug", 5) == 1);
     OK(severity_class("TRACE", 5) == 0);
     OK(severity_class("hello", 5) == -1);
+    OK(severity_class("Fault", 5) == 5);
+    OK(severity_class("Default", 7) == 2); /* not fatal despite "fault" */
 
     return TEST_REPORT("test_template");
 }
