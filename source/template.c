@@ -1,0 +1,741 @@
+#include <ctype.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "template.h"
+#include "tstamp.h"
+#include "util.h"
+
+/* ------------------------------------------------------------------ */
+/* helpers                                                             */
+
+const char *field_type_name(FieldType ft)
+{
+    switch (ft) {
+    case FT_STRING:    return "string";
+    case FT_WORD:      return "word";
+    case FT_INT:       return "int";
+    case FT_FLOAT:     return "float";
+    case FT_TIMESTAMP: return "timestamp";
+    case FT_ENUM:      return "enum";
+    }
+    return "?";
+}
+
+static int type_from_name(const char *s)
+{
+    if (str_ieq(s, "string") || str_ieq(s, "text"))
+        return FT_STRING;
+    if (str_ieq(s, "word"))
+        return FT_WORD;
+    if (str_ieq(s, "int") || str_ieq(s, "integer"))
+        return FT_INT;
+    if (str_ieq(s, "float") || str_ieq(s, "double") || str_ieq(s, "number"))
+        return FT_FLOAT;
+    if (str_ieq(s, "timestamp"))
+        return FT_TIMESTAMP;
+    if (str_ieq(s, "enum"))
+        return FT_ENUM;
+    return -1;
+}
+
+int template_field_index(const Template *t, const char *name, size_t namelen)
+{
+    int i;
+    for (i = 0; i < t->nfields; i++) {
+        if (strlen(t->fields[i].name) == namelen &&
+            !strncmp(t->fields[i].name, name, namelen))
+            return i;
+    }
+    return -1;
+}
+
+static int field_get_or_create(Template *t, const char *name, size_t nl,
+                               char *err, size_t errsz)
+{
+    TField *f;
+    int i = template_field_index(t, name, nl);
+    if (i >= 0)
+        return i;
+    if (t->nfields == TPL_MAX_FIELDS) {
+        snprintf(err, errsz, "too many fields (max %d)", TPL_MAX_FIELDS);
+        return -1;
+    }
+    f = &t->fields[t->nfields];
+    memset(f, 0, sizeof *f);
+    if (nl > sizeof f->name - 1)
+        nl = sizeof f->name - 1;
+    memcpy(f->name, name, nl);
+    f->name[nl] = 0;
+    f->type = FT_STRING;
+    return t->nfields++;
+}
+
+/* ------------------------------------------------------------------ */
+/* template definition parsing                                         */
+
+static int push_lit(Template *t, const char *lit, int len, char *err,
+                    size_t errsz)
+{
+    while (len > 0) {
+        TToken *tk;
+        int c = len < 63 ? len : 63;
+        if (t->ntoks == TPL_MAX_TOKENS) {
+            snprintf(err, errsz, "entry pattern too complex");
+            return -1;
+        }
+        tk = &t->toks[t->ntoks++];
+        tk->field = -1;
+        memcpy(tk->lit, lit, (size_t)c);
+        tk->lit[c] = 0;
+        tk->litlen = c;
+        lit += c;
+        len -= c;
+    }
+    return 0;
+}
+
+static int parse_pattern(Template *t, const char *val, char *err,
+                         size_t errsz)
+{
+    char lit[64];
+    int ll = 0;
+    const char *p = val;
+
+    while (*p) {
+        if (p[0] == '%' && p[1] == '{') {
+            char spec[96];
+            char *ty, *nm;
+            size_t sl;
+            int fi;
+            const char *e = strchr(p + 2, '}');
+
+            if (ll) {
+                if (push_lit(t, lit, ll, err, errsz))
+                    return -1;
+                ll = 0;
+            }
+            if (!e) {
+                snprintf(err, errsz, "unterminated %%{...} in entry pattern");
+                return -1;
+            }
+            sl = (size_t)(e - (p + 2));
+            if (sl > sizeof spec - 1) {
+                snprintf(err, errsz, "field reference too long");
+                return -1;
+            }
+            memcpy(spec, p + 2, sl);
+            spec[sl] = 0;
+            ty = strchr(spec, ':');
+            if (ty)
+                *ty++ = 0;
+            nm = trim(spec);
+            if (!*nm) {
+                snprintf(err, errsz, "empty field name in entry pattern");
+                return -1;
+            }
+            fi = field_get_or_create(t, nm, strlen(nm), err, errsz);
+            if (fi < 0)
+                return -1;
+            if (ty) {
+                int tt = type_from_name(trim(ty));
+                if (tt < 0) {
+                    snprintf(err, errsz, "unknown field type '%s'", ty);
+                    return -1;
+                }
+                t->fields[fi].type = (FieldType)tt;
+            }
+            if (t->ntoks == TPL_MAX_TOKENS) {
+                snprintf(err, errsz, "entry pattern too complex");
+                return -1;
+            }
+            t->toks[t->ntoks].field = fi;
+            t->toks[t->ntoks].lit[0] = 0;
+            t->toks[t->ntoks].litlen = 0;
+            t->ntoks++;
+            p = e + 1;
+        } else if (p[0] == '%' && p[1] == '%') {
+            lit[ll++] = '%';
+            p += 2;
+            if (ll == 63) {
+                if (push_lit(t, lit, ll, err, errsz))
+                    return -1;
+                ll = 0;
+            }
+        } else {
+            lit[ll++] = *p++;
+            if (ll == 63) {
+                if (push_lit(t, lit, ll, err, errsz))
+                    return -1;
+                ll = 0;
+            }
+        }
+    }
+    if (ll && push_lit(t, lit, ll, err, errsz))
+        return -1;
+    if (!t->ntoks) {
+        snprintf(err, errsz, "empty entry pattern");
+        return -1;
+    }
+    return 0;
+}
+
+static void sort_values_by_len(TField *f)
+{
+    int i, j;
+    for (i = 1; i < f->nvalues; i++) {
+        char *v = f->values[i];
+        size_t vl = strlen(v);
+        for (j = i; j > 0 && strlen(f->values[j - 1]) < vl; j--)
+            f->values[j] = f->values[j - 1];
+        f->values[j] = v;
+    }
+}
+
+static int parse_field_attrs(Template *t, int fi, const char *val, char *err,
+                             size_t errsz)
+{
+    TField *f = &t->fields[fi];
+    const char *p = val;
+
+    while (*p) {
+        const char *ks;
+        size_t kl, vl = 0;
+        char vbuf[256];
+
+        while (*p == ' ' || *p == '\t' || *p == ',')
+            p++;
+        if (!*p)
+            break;
+        ks = p;
+        while (*p && *p != '=' && *p != ' ' && *p != '\t')
+            p++;
+        if (*p != '=') {
+            snprintf(err, errsz, "field %s: expected key=value near '%s'",
+                     f->name, ks);
+            return -1;
+        }
+        kl = (size_t)(p - ks);
+        p++;
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"' && vl < sizeof vbuf - 1)
+                vbuf[vl++] = *p++;
+            if (*p != '"') {
+                snprintf(err, errsz, "field %s: unterminated quote", f->name);
+                return -1;
+            }
+            p++;
+        } else {
+            while (*p && *p != ' ' && *p != '\t' && *p != ',' &&
+                   vl < sizeof vbuf - 1)
+                vbuf[vl++] = *p++;
+        }
+        vbuf[vl] = 0;
+
+#define KEQ(k) (kl == strlen(k) && !strncmp(ks, k, kl))
+        if (KEQ("type")) {
+            int ty = type_from_name(vbuf);
+            if (ty < 0) {
+                snprintf(err, errsz, "field %s: unknown type '%s'", f->name,
+                         vbuf);
+                return -1;
+            }
+            f->type = (FieldType)ty;
+        } else if (KEQ("format")) {
+            snprintf(f->tsfmt, sizeof f->tsfmt, "%s", vbuf);
+            if (f->type == FT_STRING)
+                f->type = FT_TIMESTAMP;
+        } else if (KEQ("values")) {
+            char *tok, *save = vbuf;
+            while ((tok = save) != NULL && *save) {
+                char *sep = strpbrk(save, "|,");
+                if (sep) {
+                    *sep = 0;
+                    save = sep + 1;
+                } else {
+                    save += strlen(save);
+                }
+                tok = trim(tok);
+                if (*tok) {
+                    if (f->nvalues == TPL_MAX_VALUES) {
+                        snprintf(err, errsz, "field %s: too many values",
+                                 f->name);
+                        return -1;
+                    }
+                    f->values[f->nvalues++] = xstrdup(tok);
+                }
+            }
+            if (f->type == FT_STRING || f->type == FT_WORD)
+                f->type = FT_ENUM;
+            sort_values_by_len(f);
+        } else if (KEQ("unit")) {
+            snprintf(f->unit, sizeof f->unit, "%s", vbuf);
+        } else {
+            snprintf(err, errsz, "field %s: unknown attribute '%.*s'",
+                     f->name, (int)kl, ks);
+            return -1;
+        }
+#undef KEQ
+    }
+    return 0;
+}
+
+int template_parse_text(Template *t, const char *text, char *err,
+                        size_t errsz)
+{
+    const char *p = text;
+    int lno = 0, has_entry = 0, i;
+    static const char *LEVEL_NAMES[] = { "level",    "severity", "lvl",
+                                         "loglevel", "priority", "pri" };
+
+    memset(t, 0, sizeof *t);
+    t->level_field = -1;
+
+    while (*p) {
+        char line[512];
+        char *s, *c, *key, *val;
+        const char *e = strchr(p, '\n');
+        size_t ll = e ? (size_t)(e - p) : strlen(p);
+
+        lno++;
+        if (ll > sizeof line - 1) {
+            snprintf(err, errsz, "line %d: too long", lno);
+            return -1;
+        }
+        memcpy(line, p, ll);
+        line[ll] = 0;
+        p = e ? e + 1 : p + ll;
+
+        s = trim(line);
+        if (!*s || *s == '#')
+            continue;
+        c = strchr(s, ':');
+        if (!c) {
+            snprintf(err, errsz, "line %d: expected 'key: value'", lno);
+            return -1;
+        }
+        *c = 0;
+        key = trim(s);
+        val = trim(c + 1);
+
+        if (!strcmp(key, "name")) {
+            snprintf(t->name, sizeof t->name, "%s", val);
+        } else if (!strcmp(key, "description")) {
+            snprintf(t->desc, sizeof t->desc, "%s", val);
+        } else if (!strcmp(key, "entry")) {
+            if (parse_pattern(t, val, err, errsz))
+                return -1;
+            has_entry = 1;
+        } else if (!strncmp(key, "field", 5) &&
+                   (key[5] == ' ' || key[5] == '\t')) {
+            char *fname = trim(key + 5);
+            int fi = field_get_or_create(t, fname, strlen(fname), err, errsz);
+            if (fi < 0)
+                return -1;
+            if (parse_field_attrs(t, fi, val, err, errsz))
+                return -1;
+        } else {
+            snprintf(err, errsz, "line %d: unknown key '%s'", lno, key);
+            return -1;
+        }
+    }
+
+    if (!has_entry) {
+        snprintf(err, errsz, "template has no 'entry:' pattern");
+        return -1;
+    }
+    if (!t->name[0])
+        snprintf(t->name, sizeof t->name, "custom");
+
+    for (i = 0; i < t->nfields; i++) {
+        size_t k;
+        if (t->fields[i].type == FT_TIMESTAMP && !t->fields[i].tsfmt[0])
+            snprintf(t->fields[i].tsfmt, sizeof t->fields[i].tsfmt,
+                     "%%Y-%%m-%%d %%H:%%M:%%S");
+        for (k = 0; k < sizeof LEVEL_NAMES / sizeof LEVEL_NAMES[0]; k++) {
+            if (t->level_field < 0 &&
+                str_ieq(t->fields[i].name, LEVEL_NAMES[k]))
+                t->level_field = i;
+        }
+    }
+    return 0;
+}
+
+int template_load_file(Template *t, const char *path, char *err,
+                       size_t errsz)
+{
+    FILE *fp = fopen(path, "rb");
+    char *buf;
+    size_t cap = 4096, len = 0, n;
+    int rc;
+
+    if (!fp) {
+        snprintf(err, errsz, "cannot open template file");
+        return -1;
+    }
+    buf = xmalloc(cap);
+    while ((n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
+        len += n;
+        if (cap - len < 2) {
+            cap *= 2;
+            buf = xrealloc(buf, cap);
+        }
+    }
+    fclose(fp);
+    buf[len] = 0;
+    rc = template_parse_text(t, buf, err, errsz);
+    free(buf);
+    return rc;
+}
+
+void template_free(Template *t)
+{
+    int i, j;
+    for (i = 0; i < t->nfields; i++)
+        for (j = 0; j < t->fields[i].nvalues; j++)
+            free(t->fields[i].values[j]);
+    memset(t, 0, sizeof *t);
+}
+
+/* ------------------------------------------------------------------ */
+/* line matching                                                       */
+
+/* Match a literal token; a space in the literal matches one or more
+ * spaces/tabs in the input (so "Jun  1" style padding still matches). */
+static int lit_match(const char *s, size_t n, size_t *i, const char *lit,
+                     int litlen)
+{
+    size_t p = *i;
+    int k;
+    for (k = 0; k < litlen; k++) {
+        if (lit[k] == ' ') {
+            size_t st = p;
+            while (p < n && (s[p] == ' ' || s[p] == '\t'))
+                p++;
+            if (p == st)
+                return 0;
+            while (k + 1 < litlen && lit[k + 1] == ' ')
+                k++;
+        } else {
+            if (p < n && s[p] == lit[k])
+                p++;
+            else
+                return 0;
+        }
+    }
+    *i = p;
+    return 1;
+}
+
+static int iswordch(char c)
+{
+    return isalnum((unsigned char)c) || c == '_';
+}
+
+int template_match(const Template *t, const char *s, size_t len, Span *fsp,
+                   double *fnum)
+{
+    size_t i = 0;
+    int ti;
+
+    for (ti = 0; ti < t->nfields; ti++) {
+        fsp[ti].off = 0;
+        fsp[ti].len = 0;
+        fnum[ti] = NAN;
+    }
+
+    for (ti = 0; ti < t->ntoks; ti++) {
+        const TToken *tk = &t->toks[ti];
+        const TField *f;
+        const TToken *nx;
+        size_t start;
+        double num = NAN;
+
+        if (tk->field < 0) {
+            if (!lit_match(s, len, &i, tk->lit, tk->litlen))
+                return 0;
+            continue;
+        }
+        f = &t->fields[tk->field];
+        nx = (ti + 1 < t->ntoks) ? &t->toks[ti + 1] : NULL;
+        start = i;
+
+        switch (f->type) {
+        case FT_INT: {
+            size_t p = i, d0;
+            int neg = 0;
+            double v = 0;
+            if (p < len && (s[p] == '+' || s[p] == '-')) {
+                neg = s[p] == '-';
+                p++;
+            }
+            d0 = p;
+            while (p < len && isdigit((unsigned char)s[p])) {
+                v = v * 10 + (s[p] - '0');
+                p++;
+            }
+            if (p == d0)
+                return 0;
+            num = neg ? -v : v;
+            i = p;
+            break;
+        }
+        case FT_FLOAT: {
+            char tmp[48], *end;
+            size_t p = i, k = 0, q;
+            double v;
+            while (p < len && (s[p] == ' ' || s[p] == '\t'))
+                p++;
+            q = p;
+            while (q < len && k < sizeof tmp - 1 &&
+                   (isdigit((unsigned char)s[q]) || s[q] == '+' ||
+                    s[q] == '-' || s[q] == '.' || s[q] == 'e' ||
+                    s[q] == 'E'))
+                tmp[k++] = s[q++];
+            tmp[k] = 0;
+            v = strtod(tmp, &end);
+            if (end == tmp)
+                return 0;
+            num = v;
+            i = p + (size_t)(end - tmp);
+            start = p;
+            break;
+        }
+        case FT_TIMESTAMP: {
+            size_t cons;
+            double v;
+            if (ts_parse(s + i, len - i, f->tsfmt, &v, &cons))
+                return 0;
+            num = v;
+            i += cons;
+            break;
+        }
+        case FT_ENUM: {
+            int vi, hit = -1;
+            for (vi = 0; vi < f->nvalues; vi++) {
+                size_t vl = strlen(f->values[vi]);
+                if (i + vl <= len && !memcmp(s + i, f->values[vi], vl)) {
+                    /* word boundary so INFO does not half-match INF */
+                    if (i + vl < len && iswordch(s[i + vl]) && vl &&
+                        iswordch(f->values[vi][vl - 1]))
+                        continue;
+                    hit = vi;
+                    i += vl;
+                    break;
+                }
+            }
+            if (hit < 0)
+                return 0;
+            break;
+        }
+        case FT_WORD:
+        case FT_STRING: {
+            if (nx && nx->field < 0) {
+                /* non-greedy scan for the next literal */
+                size_t p = i;
+                int found = 0;
+                for (; p <= len; p++) {
+                    size_t q = p;
+                    if (lit_match(s, len, &q, nx->lit, nx->litlen)) {
+                        found = 1;
+                        break;
+                    }
+                    if (f->type == FT_WORD && p < len &&
+                        (s[p] == ' ' || s[p] == '\t'))
+                        break;
+                    if (p == len)
+                        break;
+                }
+                if (!found)
+                    return 0;
+                if (p == i && f->type == FT_WORD)
+                    return 0;
+                i = p;
+            } else if (f->type == FT_WORD) {
+                size_t p = i;
+                while (p < len && s[p] != ' ' && s[p] != '\t')
+                    p++;
+                if (p == i)
+                    return 0;
+                i = p;
+            } else {
+                i = len;
+            }
+            break;
+        }
+        }
+
+        fsp[tk->field].off = start;
+        fsp[tk->field].len = i - start;
+        fnum[tk->field] = num;
+    }
+
+    while (i < len && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r'))
+        i++;
+    return i == len;
+}
+
+int severity_class(const char *v, size_t n)
+{
+    static const struct { const char *pat; int cls; } M[] = {
+        { "ftl", 5 }, { "fatal", 5 }, { "crit", 5 }, { "emerg", 5 },
+        { "alert", 5 }, { "panic", 5 },
+        { "err", 4 },
+        { "wrn", 3 }, { "warn", 3 },
+        { "inf", 2 }, { "notice", 2 },
+        { "dbg", 1 }, { "debug", 1 },
+        { "trc", 0 }, { "trace", 0 }, { "vrb", 0 }, { "verbose", 0 },
+    };
+    size_t k;
+    for (k = 0; k < sizeof M / sizeof M[0]; k++)
+        if (find_sub(v, n, M[k].pat, strlen(M[k].pat), 1) >= 0)
+            return M[k].cls;
+    return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/* built-in templates                                                  */
+
+static const char *BI_TEXTS[] = {
+    /* plain must stay first: it is the autodetect fallback */
+    "name: plain\n"
+    "description: unstructured text; the whole line is the message\n"
+    "entry: %{message}\n"
+    "field message: type=string\n",
+
+    "name: syslog\n"
+    "description: BSD syslog / RFC 3164 ('Jun  1 19:18:23 host proc[1]: msg')\n"
+    "entry: %{timestamp} %{host} %{proc}: %{message}\n"
+    "field timestamp: type=timestamp format=\"%b %e %H:%M:%S\"\n"
+    "field host: type=word\n"
+    "field proc: type=word\n"
+    "field message: type=string\n",
+
+    "name: syslog-iso\n"
+    "description: rsyslog with ISO timestamps ('2026-06-01T19:18:23.123+02:00 host proc: msg')\n"
+    "entry: %{timestamp} %{host} %{proc}: %{message}\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%dT%H:%M:%S.%f%z\"\n"
+    "field host: type=word\n"
+    "field proc: type=word\n"
+    "field message: type=string\n",
+
+    "name: dmesg\n"
+    "description: Linux kernel ring buffer ('[   12.345678] usb 1-1: ...')\n"
+    "entry: [%{time}] %{message}\n"
+    "field time: type=float unit=s\n"
+    "field message: type=string\n",
+
+    "name: serilog\n"
+    "description: Serilog output ('2026-06-01 19:18:23.123+2.00 UTC [INF]: msg')\n"
+    "entry: %{timestamp} [%{level}]: %{message}\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z%Z\"\n"
+    "field level: type=enum values=VRB|DBG|INF|WRN|ERR|FTL\n"
+    "field message: type=string\n",
+
+    "name: python\n"
+    "description: Python logging ('2026-06-01 19:18:23,123 - root - INFO - msg')\n"
+    "entry: %{timestamp} - %{logger} - %{level} - %{message}\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S,%f\"\n"
+    "field logger: type=word\n"
+    "field level: type=enum values=DEBUG|INFO|WARNING|ERROR|CRITICAL\n"
+    "field message: type=string\n",
+
+    "name: apache\n"
+    "description: Apache/nginx common log format\n"
+    "entry: %{host} %{ident} %{user} [%{timestamp}] \"%{request}\" %{status} %{size}\n"
+    "field timestamp: type=timestamp format=\"%d/%b/%Y:%H:%M:%S %z\"\n"
+    "field host: type=word\n"
+    "field ident: type=word\n"
+    "field user: type=word\n"
+    "field request: type=string\n"
+    "field status: type=int\n"
+    "field size: type=word unit=bytes\n",
+};
+
+#define N_BUILTIN ((int)(sizeof BI_TEXTS / sizeof BI_TEXTS[0]))
+
+static Template g_bi[N_BUILTIN];
+static int g_ready = 0;
+
+static void init_builtins(void)
+{
+    int i;
+    char err[256];
+    if (g_ready)
+        return;
+    for (i = 0; i < N_BUILTIN; i++) {
+        if (template_parse_text(&g_bi[i], BI_TEXTS[i], err, sizeof err)) {
+            fprintf(stderr, "lx: internal template error: %s\n", err);
+            exit(1);
+        }
+    }
+    g_ready = 1;
+}
+
+int template_builtin_count(void)
+{
+    return N_BUILTIN;
+}
+
+const Template *template_builtin_at(int i)
+{
+    init_builtins();
+    if (i < 0 || i >= N_BUILTIN)
+        return NULL;
+    return &g_bi[i];
+}
+
+const Template *template_builtin(const char *name)
+{
+    int i;
+    init_builtins();
+    for (i = 0; i < N_BUILTIN; i++)
+        if (str_ieq(g_bi[i].name, name))
+            return &g_bi[i];
+    return NULL;
+}
+
+const Template *template_autodetect(const char *buf, size_t len)
+{
+    int ti, besti = -1;
+    double best = 0.0;
+
+    init_builtins();
+    for (ti = 1; ti < N_BUILTIN; ti++) {
+        Span sp[TPL_MAX_FIELDS];
+        double fn[TPL_MAX_FIELDS];
+        size_t i = 0;
+        int total = 0, hit = 0;
+
+        while (i < len && total < 50) {
+            const char *nl = memchr(buf + i, '\n', len - i);
+            size_t ll = nl ? (size_t)(nl - (buf + i)) : len - i;
+            size_t l2 = ll;
+            if (l2 && buf[i + l2 - 1] == '\r')
+                l2--;
+            /* indented lines are almost always continuations (stack
+             * traces etc.); don't hold them against a template */
+            if (l2 && buf[i] != ' ' && buf[i] != '\t') {
+                total++;
+                if (template_match(&g_bi[ti], buf + i, l2, sp, fn))
+                    hit++;
+            }
+            if (!nl)
+                break;
+            i += ll + 1;
+        }
+        if (total) {
+            double r = (double)hit / total;
+            if (r > best) {
+                best = r;
+                besti = ti;
+            }
+        }
+    }
+    if (besti >= 0 && best >= 0.6)
+        return &g_bi[besti];
+    return &g_bi[0];
+}

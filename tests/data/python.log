@@ -1,0 +1,9 @@
+2026-06-01 19:18:23,123 - root - INFO - service starting
+2026-06-01 19:18:24,456 - app.db - DEBUG - opening connection pool
+2026-06-01 19:18:25,789 - app.db - WARNING - pool nearly exhausted (9/10)
+2026-06-01 19:18:26,012 - app.api - ERROR - request failed: ConnectionError
+Traceback (most recent call last):
+  File "api.py", line 42, in handle
+    resp = fetch(url)
+ConnectionError: [Errno 111] Connection refused
+2026-06-01 19:18:27,900 - root - CRITICAL - shutting down

@@ -1,0 +1,6 @@
+[    0.000000] Linux version 6.8.0-40-generic (buildd@lcy02-amd64-078)
+[    0.004211] Command line: BOOT_IMAGE=/boot/vmlinuz root=UUID=abcd ro quiet
+[    1.201933] usb 1-1: new high-speed USB device number 2 using xhci_hcd
+[    1.352902] usb 1-1: New USB device found, idVendor=046d, idProduct=c52b
+[   12.345678] EXT4-fs (nvme0n1p2): mounted filesystem with ordered data mode
+[  100.220145] audit: type=1400 apparmor="DENIED" operation="open"

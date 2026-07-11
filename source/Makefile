@@ -1,0 +1,62 @@
+# lx build. Invoked from the repository root Makefile, or directly:
+#   make -C source
+# Platform-specific sources are selected by uname; everything else is
+# plain C99 + the standard library.
+
+BUILD   ?= ../build
+BIN     := $(BUILD)/lx
+CC      ?= cc
+OPT     ?= -O2
+CSTD    := -std=c99
+WARN    := -Wall -Wextra
+PREFIX  ?= /usr/local
+
+UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
+
+CORE := main.c util.c tstamp.c template.c filter.c logfile.c ui.c
+
+ifeq ($(UNAME_S),Darwin)
+  PLAT := posix/term_posix.c darwin/fswatch_darwin.c
+  DEFS := -D_DARWIN_C_SOURCE
+else ifeq ($(UNAME_S),Linux)
+  PLAT := posix/term_posix.c linux/fswatch_linux.c
+  DEFS := -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+else
+  PLAT := posix/term_posix.c posix/fswatch_poll.c
+  DEFS := -D_POSIX_C_SOURCE=200809L
+endif
+
+SRC := $(CORE) $(PLAT)
+OBJ := $(SRC:%.c=$(BUILD)/obj/%.o)
+LIBOBJ := $(filter-out $(BUILD)/obj/main.o,$(OBJ))
+
+TESTS := test_tstamp test_template test_filter test_logfile
+TESTBIN := $(TESTS:%=$(BUILD)/tests/%)
+
+all: $(BIN)
+
+$(BIN): $(OBJ)
+	@mkdir -p $(BUILD)
+	$(CC) $(OBJ) -o $@
+
+$(BUILD)/obj/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CSTD) $(WARN) $(OPT) $(DEFS) -I. -c $< -o $@
+
+$(BUILD)/tests/%: ../tests/%.c $(LIBOBJ)
+	@mkdir -p $(BUILD)/tests
+	$(CC) $(CSTD) $(WARN) $(OPT) $(DEFS) -I. -I../tests $< $(LIBOBJ) -o $@
+
+test: $(TESTBIN)
+	@set -e; for t in $(TESTBIN); do $$t; done; echo "all tests passed"
+
+install: $(BIN)
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/lx
+	install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 0644 ../documentation/lx.1 $(DESTDIR)$(PREFIX)/share/man/man1/lx.1
+
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: all test install clean

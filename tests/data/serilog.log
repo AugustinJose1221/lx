@@ -1,0 +1,8 @@
+2026-06-01 19:18:23.123+2.00 UTC [INF]: Application started
+2026-06-01 19:18:24.001+2.00 UTC [DBG]: Cache warm-up begun
+2026-06-01 19:18:25.512+2.00 UTC [WRN]: Disk usage at 85%
+2026-06-01 19:18:26.700+2.00 UTC [ERR]: Failed to connect to db-01: timeout
+    retry 1 of 3
+    retry 2 of 3
+2026-06-01 19:18:30.002+2.00 UTC [INF]: Connected to db-02
+2026-06-01 19:18:31.444+2.00 UTC [FTL]: Unrecoverable state, shutting down

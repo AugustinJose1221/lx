@@ -1,0 +1,19 @@
+# Example custom template for lx.
+#
+# Parses MyApp logs that look like:
+#   19:18:23.123 | WARN  | net | retry in 5 s
+#   19:18:24.500 | ERROR | db  | connection lost
+#
+# Usage:
+#   lx myapp.log -T documentation/examples/myapp.lxt
+#   lx myapp.log -T documentation/examples/myapp.lxt -f 'level==ERROR'
+
+name: myapp
+description: MyApp console output
+
+entry: %{time} | %{level} | %{module} | %{message}
+
+field time: type=timestamp format="%H:%M:%S.%f"
+field level: type=enum values=TRACE|DEBUG|INFO|WARN|ERROR
+field module: type=word
+field message: type=string

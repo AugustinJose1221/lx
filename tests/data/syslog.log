@@ -1,0 +1,5 @@
+Jun  1 19:18:23 webserver sshd[4123]: Accepted publickey for deploy from 10.0.0.5 port 51022
+Jun  1 19:18:24 webserver sshd[4123]: pam_unix(sshd:session): session opened for user deploy
+Jun  1 19:18:30 webserver kernel: [1203.441] eth0: link becomes ready
+Jun  1 19:19:02 webserver cron[221]: (root) CMD (run-parts /etc/cron.hourly)
+Jun  1 19:20:15 webserver sshd[4123]: pam_unix(sshd:session): session closed for user deploy

@@ -1,0 +1,94 @@
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "util.h"
+
+void *xmalloc(size_t n)
+{
+    void *p = malloc(n ? n : 1);
+    if (!p) {
+        fprintf(stderr, "lx: out of memory\n");
+        exit(1);
+    }
+    return p;
+}
+
+void *xrealloc(void *p, size_t n)
+{
+    void *q = realloc(p, n ? n : 1);
+    if (!q) {
+        fprintf(stderr, "lx: out of memory\n");
+        exit(1);
+    }
+    return q;
+}
+
+char *xstrdup(const char *s)
+{
+    size_t n = strlen(s) + 1;
+    char *p = xmalloc(n);
+    memcpy(p, s, n);
+    return p;
+}
+
+void *xgrow(void *p, size_t *cap, size_t need, size_t esz)
+{
+    size_t nc;
+    if (need <= *cap)
+        return p;
+    nc = *cap ? *cap * 2 : 64;
+    while (nc < need)
+        nc *= 2;
+    p = xrealloc(p, nc * esz);
+    *cap = nc;
+    return p;
+}
+
+long find_sub(const char *hay, size_t hlen, const char *nee, size_t nlen,
+              int nocase)
+{
+    size_t i, j;
+    if (nlen == 0)
+        return 0;
+    if (nlen > hlen)
+        return -1;
+    for (i = 0; i + nlen <= hlen; i++) {
+        for (j = 0; j < nlen; j++) {
+            char a = hay[i + j], b = nee[j];
+            if (nocase) {
+                a = (char)tolower((unsigned char)a);
+                b = (char)tolower((unsigned char)b);
+            }
+            if (a != b)
+                break;
+        }
+        if (j == nlen)
+            return (long)i;
+    }
+    return -1;
+}
+
+int str_ieq(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+            return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+char *trim(char *s)
+{
+    size_t l;
+    while (*s == ' ' || *s == '\t')
+        s++;
+    l = strlen(s);
+    while (l && (s[l - 1] == ' ' || s[l - 1] == '\t' || s[l - 1] == '\r' ||
+                 s[l - 1] == '\n'))
+        s[--l] = 0;
+    return s;
+}

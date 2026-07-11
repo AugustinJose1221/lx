@@ -1,0 +1,210 @@
+.TH LX 1 "July 2026" "lx 0.1.0" "User Commands"
+.SH NAME
+lx \- view, navigate and filter log files in the terminal
+.SH SYNOPSIS
+.B lx
+[\fIoptions\fR] \fIlogfile\fR
+.SH DESCRIPTION
+.B lx
+is an interactive, vi\-style viewer for log files (.log, .txt).
+It parses each line against a
+.I log template
+that names the components of a log entry (timestamp, level, message, ...),
+colours entries by severity, and lets you filter on any named field.
+Lines that do not match the template (stack traces, wrapped output) are
+treated as continuations of the previous entry and follow it through
+filters.
+.PP
+Without
+.B \-t
+or
+.B \-T
+the template is auto\-detected from the file contents.
+.SH OPTIONS
+.TP
+.BI \-t " name"
+Parse with the built\-in template \fIname\fR (see \fB\-l\fR).
+.TP
+.BI \-T " file"
+Parse with a template definition loaded from \fIfile\fR (see
+.BR "TEMPLATE FILES" ).
+.TP
+.BI \-f " expr"
+Apply the filter expression \fIexpr\fR at startup (see
+.BR FILTERS ).
+.TP
+.B \-F
+Start in follow mode: new data appended to the file appears
+automatically, like
+.BR "tail \-f" .
+On Linux and macOS this uses inotify/kqueue; elsewhere the file is
+polled.
+.TP
+.B \-P
+Non\-interactive mode: print the (filtered) lines to standard output and
+exit. Useful in pipelines and scripts.
+.TP
+.B \-l
+List the built\-in templates and exit.
+.TP
+.B \-h, \-\-help
+Show usage and exit.
+.TP
+.B \-V, \-\-version
+Show the version and exit.
+.SH BUILT-IN TEMPLATES
+.TP
+.B plain
+Unstructured text; the whole line is the \fImessage\fR field.
+.TP
+.B syslog
+BSD syslog / RFC 3164: \fIJun  1 19:18:23 host proc[42]: message\fR.
+Fields: timestamp, host, proc, message.
+.TP
+.B syslog-iso
+rsyslog with ISO timestamps:
+\fI2026\-06\-01T19:18:23.123+02:00 host proc: message\fR.
+.TP
+.B dmesg
+Linux kernel ring buffer: \fI[   12.345678] message\fR.
+Fields: time (seconds since boot), message.
+.TP
+.B serilog
+Serilog (.NET):
+\fI2026\-06\-01 19:18:23.123+2.00 UTC [INF]: message\fR.
+Fields: timestamp, level (VRB DBG INF WRN ERR FTL), message.
+.TP
+.B python
+Python logging:
+\fI2026\-06\-01 19:18:23,123 \- logger \- INFO \- message\fR.
+Fields: timestamp, logger, level, message.
+.TP
+.B apache
+Apache/nginx common log format. Fields: host, ident, user, timestamp,
+request, status, size.
+.SH KEY BINDINGS
+.TP
+.B j / k, arrow keys
+Move the cursor down / up.
+.TP
+.B d / u  (also Ctrl\-D / Ctrl\-U)
+Half a page down / up.
+.TP
+.B space / b, PageDown / PageUp
+Full page down / up.
+.TP
+.B g / G, Home / End
+Jump to the first / last entry.
+.TP
+.B h / l, left / right
+Scroll horizontally; \fB0\fR resets.
+.TP
+.B Enter
+Show the parsed fields of the current entry (name, type, unit, value).
+.TP
+.B /
+Search (case\-insensitive substring); \fBn\fR / \fBN\fR jump to the
+next / previous match.
+.TP
+.B F
+Toggle follow mode.
+.TP
+.BI : filter " expr"
+Filter the entries (see
+.BR FILTERS ).
+.B :clear
+removes the filter.
+.TP
+.BI : N
+Go to line \fIN\fR.
+.TP
+.BI : template " name"
+Re\-parse the file with another template (a built\-in name or a
+\&.lxt file path).
+.TP
+.B ?
+Help.
+.TP
+.B q
+Quit.
+.SH FILTERS
+Filter expressions refer to the named fields of the active template:
+.PP
+.nf
+    level == ERR
+    level == ERR || level == WRN
+    message ~ "connection timeout" && not level == DBG
+    timestamp >= "2026-06-01 19:00:00" and timestamp < "2026-06-01 20:00"
+    status >= 500
+    proc ~ sshd
+    raw ~ kernel          (raw: the whole unparsed line)
+    line > 1000           (line: the line number)
+.fi
+.PP
+Operators:
+.B "== != ~ !~ > >= < <="
+where
+.B ~
+means \fIcontains\fR (case\-insensitive). Boolean logic with
+.B "&& || !"
+or the words
+.BR "and or not" ,
+plus parentheses. Values may be barewords, quoted strings or numbers.
+Comparisons use the field's declared type: numbers compare numerically,
+timestamps by wall\-clock time as printed in the file (a value without
+a date, like "19:18:23", also works when the template's timestamp has
+no date component).
+.SH TEMPLATE FILES
+A template file (conventionally \fI*.lxt\fR) describes the structure of
+one log entry. Example:
+.PP
+.nf
+    # MyApp logs look like:
+    #   19:18:23.123 | WARN  | net | retry in 5 s
+    name: myapp
+    description: MyApp console output
+    entry: %{time} | %{level} | %{module} | %{message}
+    field time: type=timestamp format="%H:%M:%S.%f"
+    field level: type=enum values=TRACE|DEBUG|INFO|WARN|ERROR
+    field module: type=word
+    field message: type=string
+.fi
+.PP
+The
+.B entry:
+pattern mixes literal text with named
+.B %{field}
+placeholders. Every field can be declared with a
+.B type
+(string, word, int, float, timestamp, enum), a
+.B unit
+(informational, shown in the field inspector), allowed
+.B values
+(enums), and a timestamp
+.BR format .
+Field names become filter identifiers. See
+.I documentation/template\-format.md
+for the full reference.
+.SH EXIT STATUS
+0 on success, 1 on I/O errors, 2 on usage errors (bad option, unknown
+template, invalid filter).
+.SH EXAMPLES
+.TP
+.B lx app.log
+Open a log with template auto\-detection.
+.TP
+.B lx kern.log \-t dmesg
+Parse with the kernel log template.
+.TP
+.B lx app.log \-T myapp.lxt \-f 'level==ERROR'
+Custom template, pre\-filtered to errors.
+.TP
+.B lx service.log \-F
+Follow a growing log file.
+.TP
+.B lx app.log \-P \-f 'status >= 500' | wc \-l
+Count server errors in a pipeline.
+.SH SEE ALSO
+.BR less (1),
+.BR journalctl (1),
+.BR dmesg (1)

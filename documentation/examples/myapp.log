@@ -1,0 +1,7 @@
+19:18:23.123 | INFO  | app | service starting
+19:18:23.500 | DEBUG | db  | opening connection pool
+19:18:24.010 | WARN  | net | retry in 5 s
+19:18:29.400 | ERROR | db  | connection lost
+  caused by: socket closed by peer
+19:18:30.001 | INFO  | db  | reconnected
+19:18:31.777 | TRACE | app | heartbeat ok
