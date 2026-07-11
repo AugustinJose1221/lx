@@ -14,6 +14,9 @@
 #define CTRL(c) ((c) & 0x1f)
 #define HSTEP 8
 #define HMAX 8000
+/* characters of a field value shown in the entry inspector when no
+ * -d line limit was given */
+#define DETAIL_DEFAULT_CHARS 500
 
 typedef struct {
     LogFile *lf;
@@ -31,6 +34,8 @@ typedef struct {
     int follow;
     int watch_fd;
     int quit;
+    int detail_lines; /* max wrapped lines per value in the inspector;
+                         0 = default character cap */
     char msg[256];
 } UI;
 
@@ -387,67 +392,117 @@ static void show_help(void)
     overlay(H, (int)(sizeof H / sizeof H[0]));
 }
 
+static void add_linef(char ***lines, size_t *n, size_t *cap,
+                      const char *fmt, ...)
+{
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    *lines = xgrow(*lines, cap, *n + 1, sizeof **lines);
+    (*lines)[(*n)++] = xstrdup(buf);
+}
+
+/* Append a value wrapped at `w` columns with a two-space indent,
+ * sanitising control bytes, capped at `maxchars` with a note about how
+ * much was cut. */
+static void add_wrapped(char ***lines, size_t *n, size_t *cap,
+                        const char *v, size_t vl, size_t maxchars, int w)
+{
+    size_t shown = vl < maxchars ? vl : maxchars;
+    size_t pos = 0;
+
+    while (pos < shown) {
+        char chunk[128];
+        size_t cw = (size_t)w - 2, k;
+        if (cw > sizeof chunk - 1)
+            cw = sizeof chunk - 1;
+        if (cw > shown - pos)
+            cw = shown - pos;
+        for (k = 0; k < cw; k++) {
+            unsigned char c = (unsigned char)v[pos + k];
+            chunk[k] = c < 32 ? ' ' : (char)c;
+        }
+        chunk[cw] = 0;
+        add_linef(lines, n, cap, "  %s", chunk);
+        pos += cw;
+    }
+    if (shown < vl)
+        add_linef(lines, n, cap,
+                  "  ... (%zu more characters; raise with -d)", vl - shown);
+}
+
 static void show_detail(UI *ui)
 {
-    char lines[TPL_MAX_FIELDS + 4][120];
-    const char *ptrs[TPL_MAX_FIELDS + 4];
-    int n = 0, i;
     const LogFile *lf = ui->lf;
     const Template *t = lf->tpl;
-    size_t ei;
     const Entry *e;
+    char **lines = NULL;
+    size_t ei, k, nl = 0, lcap = 0, maxchars;
+    int i, R, C, w;
 
     if (!ui->nvis)
         return;
+    term_get_size(&R, &C);
+    w = C - 8;
+    if (w > 100)
+        w = 100;
+    if (w < 24)
+        w = 24;
+    maxchars = ui->detail_lines > 0
+                   ? (size_t)ui->detail_lines * (size_t)(w - 2)
+                   : (size_t)DETAIL_DEFAULT_CHARS;
+
     ei = ui->vis[ui->cur];
     e = &lf->ents[ei];
 
-    snprintf(lines[n], sizeof lines[n], "line %zu  -  %s  [%s]", e->lineno,
-             e->matched ? "matched"
-                        : (e->cont ? "continuation of previous entry"
-                                   : "did not match template"),
-             t->name);
-    n++;
-    snprintf(lines[n], sizeof lines[n], "%s", "");
-    n++;
+    add_linef(&lines, &nl, &lcap, "line %zu  -  %s  [%s]", e->lineno,
+              e->matched ? "matched"
+                         : (e->cont ? "continuation of previous entry"
+                                    : "did not match template"),
+              t->name);
+    add_linef(&lines, &nl, &lcap, "%s", "");
 
     if (e->matched) {
         const Span *fsp = logfile_fspans(lf, ei);
-        for (i = 0; i < t->nfields && n < TPL_MAX_FIELDS + 3; i++) {
+        for (i = 0; i < t->nfields; i++) {
             const TField *f = &t->fields[i];
             const char *v = lf->buf + e->raw.off + fsp[i].off;
-            int vl = (int)fsp[i].len;
-            int trunc = 0;
-            if (vl > 70) {
-                vl = 70;
-                trunc = 1;
-            }
+            size_t vl = fsp[i].len;
+            char pfx[80];
+
             if (f->unit[0])
-                snprintf(lines[n], sizeof lines[n],
-                         "%-10s (%s, %s) = %.*s%s", f->name,
-                         field_type_name(f->type), f->unit, vl, v,
-                         trunc ? "..." : "");
+                snprintf(pfx, sizeof pfx, "%-10s (%s, %s)", f->name,
+                         field_type_name(f->type), f->unit);
             else
-                snprintf(lines[n], sizeof lines[n], "%-10s (%s) = %.*s%s",
-                         f->name, field_type_name(f->type), vl, v,
-                         trunc ? "..." : "");
-            n++;
+                snprintf(pfx, sizeof pfx, "%-10s (%s)", f->name,
+                         field_type_name(f->type));
+
+            if (strlen(pfx) + 3 + vl <= (size_t)w) {
+                char val[128];
+                size_t m;
+                for (m = 0; m < vl; m++) {
+                    unsigned char c = (unsigned char)v[m];
+                    val[m] = c < 32 ? ' ' : (char)c;
+                }
+                val[vl] = 0;
+                add_linef(&lines, &nl, &lcap, "%s = %s", pfx, val);
+            } else {
+                add_linef(&lines, &nl, &lcap, "%s =", pfx);
+                add_wrapped(&lines, &nl, &lcap, v, vl, maxchars, w);
+            }
         }
     } else {
-        int vl = (int)e->raw.len;
-        int trunc = 0;
-        if (vl > 70) {
-            vl = 70;
-            trunc = 1;
-        }
-        snprintf(lines[n], sizeof lines[n], "raw: %.*s%s", vl,
-                 lf->buf + e->raw.off, trunc ? "..." : "");
-        n++;
+        add_linef(&lines, &nl, &lcap, "raw =");
+        add_wrapped(&lines, &nl, &lcap, lf->buf + e->raw.off, e->raw.len,
+                    maxchars, w);
     }
 
-    for (i = 0; i < n; i++)
-        ptrs[i] = lines[i];
-    overlay(ptrs, n);
+    overlay((const char **)lines, (int)nl);
+    for (k = 0; k < nl; k++)
+        free(lines[k]);
+    free(lines);
 }
 
 /* ------------------------------------------------------------------ */
@@ -703,7 +758,8 @@ static void do_refresh(UI *ui)
 
 /* ------------------------------------------------------------------ */
 
-int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow)
+int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow,
+           int detail_lines)
 {
     UI ui;
     char inbuf[512];
@@ -712,6 +768,7 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow)
     ui.lf = lf;
     ui.filter = filter;
     ui.watch_fd = -1;
+    ui.detail_lines = detail_lines;
     if (filter)
         xcopy(ui.filter_str, sizeof ui.filter_str, filter_str);
     rebuild(&ui);

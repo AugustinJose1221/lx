@@ -19,6 +19,9 @@ static void usage(FILE *o)
           "  -f <expr>   apply a filter expression at startup,\n"
           "              e.g. -f 'level==ERR && message ~ timeout'\n"
           "  -F          start in follow mode (like tail -f)\n"
+          "  -d <n>      in the entry inspector (Enter), show up to <n>\n"
+          "              wrapped lines per field value; without -d, values\n"
+          "              are capped at 500 characters\n"
           "  -P          non-interactive: print the (filtered) lines to\n"
           "              stdout and exit\n"
           "  -l          list built-in templates\n"
@@ -43,7 +46,7 @@ static void list_templates(void)
 int main(int argc, char **argv)
 {
     const char *file = NULL, *tname = NULL, *tfile = NULL, *fexpr = NULL;
-    int follow = 0, print = 0, i, rc;
+    int follow = 0, print = 0, detail_lines = 0, i, rc;
     static Template custom;
     const Template *tpl = NULL;
     static LogFile lf;
@@ -61,6 +64,16 @@ int main(int argc, char **argv)
                 fexpr = argv[++i];
             } else if (!strcmp(a, "-F")) {
                 follow = 1;
+            } else if (!strcmp(a, "-d") && i + 1 < argc) {
+                char *end;
+                long v = strtol(argv[++i], &end, 10);
+                if (*end || v < 1 || v > 10000) {
+                    fprintf(stderr,
+                            "lx: -d expects a line count between 1 and "
+                            "10000\n");
+                    return 2;
+                }
+                detail_lines = (int)v;
             } else if (!strcmp(a, "-P")) {
                 print = 1;
             } else if (!strcmp(a, "-l")) {
@@ -142,7 +155,7 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    rc = ui_run(&lf, fexpr ? fexpr : "", fn, follow);
+    rc = ui_run(&lf, fexpr ? fexpr : "", fn, follow, detail_lines);
     logfile_free(&lf);
     return rc;
 }

@@ -36,7 +36,9 @@ lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
   `message ~ timeout`, with `&& || ! ()` logic. Unparsed lines (stack
   traces) are treated as continuations and follow their parent entry.
 - **Entry inspector**: press `Enter` on a line to see every parsed
-  field with its type, unit and value.
+  field with its type, unit and value. Long values wrap over multiple
+  lines (500 characters by default; `-d n` allows up to `n` wrapped
+  lines per value).
 - **Colour**: every field can carry a `color=#RRGGBB` hex code in its
   template (mapped to the nearest xterm-256 colour); all built-ins ship
   with a default palette. Severity (from the template's `level`/`type`

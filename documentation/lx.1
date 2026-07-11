@@ -40,6 +40,13 @@ automatically, like
 On Linux and macOS this uses inotify/kqueue; elsewhere the file is
 polled.
 .TP
+.BI \-d " n"
+In the entry inspector (\fBEnter\fR), show up to \fIn\fR wrapped lines
+per field value. Without
+.BR \-d ,
+values are capped at 500 characters; longer values end with a note
+saying how much was cut.
+.TP
 .B \-P
 Non\-interactive mode: print the (filtered) lines to standard output and
 exit. Useful in pipelines and scripts.
@@ -110,6 +117,9 @@ Scroll horizontally; \fB0\fR resets.
 .TP
 .B Enter
 Show the parsed fields of the current entry (name, type, unit, value).
+Long values wrap across multiple lines, capped at 500 characters unless
+.B \-d
+raises the limit.
 .TP
 .B /
 Search (case\-insensitive substring); \fBn\fR / \fBN\fR jump to the
