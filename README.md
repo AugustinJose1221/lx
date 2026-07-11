@@ -37,7 +37,11 @@ lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
   traces) are treated as continuations and follow their parent entry.
 - **Entry inspector**: press `Enter` on a line to see every parsed
   field with its type, unit and value.
-- **Severity colouring** driven by the template's `level` field.
+- **Colour**: every field can carry a `color=#RRGGBB` hex code in its
+  template (mapped to the nearest xterm-256 colour); all built-ins ship
+  with a default palette. Severity (from the template's `level`/`type`
+  field) overrides: error lines red, fatal lines bold red, warnings
+  yellow on the level field, continuations dimmed.
 - **Follow mode** (`-F` or `F`): inotify on Linux, kqueue on macOS,
   polling elsewhere; handles file truncation/rotation.
 - **Pipe mode** (`-P`): print filtered lines to stdout for scripts.

@@ -189,11 +189,26 @@ placeholders. Every field can be declared with a
 .B unit
 (informational, shown in the field inspector), allowed
 .B values
-(enums), and a timestamp
-.BR format .
-Field names become filter identifiers. See
+(enums), a timestamp
+.BR format ,
+a display
+.B color
+(hex code), and
+.B severity=yes
+to mark it as the severity field. Field names become filter
+identifiers. See
 .I documentation/template\-format.md
 for the full reference.
+.SH COLORS
+Each field can be given a colour with
+.BI color= #RRGGBB
+(also \fIRRGGBB\fR or \fI#RGB\fR); hex codes are mapped to the nearest
+xterm\-256 colour, so they work in any 256\-colour terminal. All
+built\-in templates ship with a default colour set. Severity overrides
+field colours: error entries are tinted red and fatal entries bold red
+across the whole line; on other entries the severity field is coloured
+by its class (warning yellow, debug cyan, trace grey). Continuation
+lines are dimmed.
 .SH EXIT STATUS
 0 on success, 1 on I/O errors, 2 on usage errors (bad option, unknown
 template, invalid filter).

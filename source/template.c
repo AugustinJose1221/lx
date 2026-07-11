@@ -70,7 +70,73 @@ static int field_get_or_create(Template *t, const char *name, size_t nl,
     memcpy(f->name, name, nl);
     f->name[nl] = 0;
     f->type = FT_STRING;
+    f->rgb = -1;
+    f->c256 = -1;
     return t->nfields++;
+}
+
+/* ------------------------------------------------------------------ */
+/* colours                                                             */
+
+int rgb_to_256(int r, int g, int b)
+{
+    /* candidate from the 6x6x6 colour cube */
+    int ir = r < 48 ? 0 : r < 115 ? 1 : (r - 35) / 40;
+    int ig = g < 48 ? 0 : g < 115 ? 1 : (g - 35) / 40;
+    int ib = b < 48 ? 0 : b < 115 ? 1 : (b - 35) / 40;
+    int cr = ir ? 55 + ir * 40 : 0;
+    int cg = ig ? 55 + ig * 40 : 0;
+    int cb = ib ? 55 + ib * 40 : 0;
+    /* candidate from the grayscale ramp */
+    int avg = (r + g + b) / 3;
+    int gi = avg > 238 ? 23 : avg < 3 ? 0 : (avg - 3) / 10;
+    int gv = 8 + gi * 10;
+    long dc = (long)(r - cr) * (r - cr) + (long)(g - cg) * (g - cg) +
+              (long)(b - cb) * (b - cb);
+    long dg = (long)(r - gv) * (r - gv) + (long)(g - gv) * (g - gv) +
+              (long)(b - gv) * (b - gv);
+    if (dg < dc)
+        return 232 + gi;
+    return 16 + 36 * ir + 6 * ig + ib;
+}
+
+static int hexval(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+/* "#RRGGBB", "RRGGBB" or "#RGB" -> 0xRRGGBB, or -1. */
+static int parse_hex_color(const char *s)
+{
+    int d[6], i;
+    size_t l;
+    if (*s == '#')
+        s++;
+    l = strlen(s);
+    if (l == 3) {
+        for (i = 0; i < 3; i++) {
+            int v = hexval(s[i]);
+            if (v < 0)
+                return -1;
+            d[i * 2] = d[i * 2 + 1] = v;
+        }
+    } else if (l == 6) {
+        for (i = 0; i < 6; i++) {
+            d[i] = hexval(s[i]);
+            if (d[i] < 0)
+                return -1;
+        }
+    } else {
+        return -1;
+    }
+    return (d[0] << 20) | (d[1] << 16) | (d[2] << 12) | (d[3] << 8) |
+           (d[4] << 4) | d[5];
 }
 
 /* ------------------------------------------------------------------ */
@@ -277,6 +343,17 @@ static int parse_field_attrs(Template *t, int fi, const char *val, char *err,
             if (str_ieq(vbuf, "yes") || str_ieq(vbuf, "true") ||
                 !strcmp(vbuf, "1"))
                 t->level_field = fi;
+        } else if (KEQ("color") || KEQ("colour")) {
+            int rgb = parse_hex_color(vbuf);
+            if (rgb < 0) {
+                snprintf(err, errsz,
+                         "field %s: bad color '%s' (expected hex like "
+                         "#5FAFD7)", f->name, vbuf);
+                return -1;
+            }
+            f->rgb = rgb;
+            f->c256 = rgb_to_256((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF,
+                                 rgb & 0xFF);
         } else {
             snprintf(err, errsz, "field %s: unknown attribute '%.*s'",
                      f->name, (int)kl, ks);
@@ -616,62 +693,62 @@ static const char *BI_TEXTS[] = {
     "name: syslog\n"
     "description: BSD syslog / RFC 3164 ('Jun  1 19:18:23 host proc[1]: msg')\n"
     "entry: %{timestamp} %{host} %{proc}: %{message}\n"
-    "field timestamp: type=timestamp format=\"%b %e %H:%M:%S\"\n"
-    "field host: type=word\n"
-    "field proc: type=word\n"
+    "field timestamp: type=timestamp format=\"%b %e %H:%M:%S\" color=#8A8A8A\n"
+    "field host: type=word color=#5FAFD7\n"
+    "field proc: type=word color=#00AFAF\n"
     "field message: type=string\n",
 
     "name: syslog-iso\n"
     "description: rsyslog with ISO timestamps ('2026-06-01T19:18:23.123+02:00 host proc: msg')\n"
     "entry: %{timestamp} %{host} %{proc}: %{message}\n"
-    "field timestamp: type=timestamp format=\"%Y-%m-%dT%H:%M:%S.%f%z\"\n"
-    "field host: type=word\n"
-    "field proc: type=word\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%dT%H:%M:%S.%f%z\" color=#8A8A8A\n"
+    "field host: type=word color=#5FAFD7\n"
+    "field proc: type=word color=#00AFAF\n"
     "field message: type=string\n",
 
     "name: dmesg\n"
     "description: Linux kernel ring buffer ('[   12.345678] usb 1-1: ...')\n"
     "entry: [%{time}] %{message}\n"
-    "field time: type=float unit=s\n"
+    "field time: type=float unit=s color=#8A8A8A\n"
     "field message: type=string\n",
 
     "name: serilog\n"
     "description: Serilog output ('2026-06-01 19:18:23.123+2.00 UTC [INF]: msg')\n"
     "entry: %{timestamp} [%{level}]: %{message}\n"
-    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z%Z\"\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z%Z\" color=#8A8A8A\n"
     "field level: type=enum values=VRB|DBG|INF|WRN|ERR|FTL\n"
     "field message: type=string\n",
 
     "name: python\n"
     "description: Python logging ('2026-06-01 19:18:23,123 - root - INFO - msg')\n"
     "entry: %{timestamp} - %{logger} - %{level} - %{message}\n"
-    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S,%f\"\n"
-    "field logger: type=word\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S,%f\" color=#8A8A8A\n"
+    "field logger: type=word color=#00AFAF\n"
     "field level: type=enum values=DEBUG|INFO|WARNING|ERROR|CRITICAL\n"
     "field message: type=string\n",
 
     "name: macos\n"
     "description: macOS unified log, as printed by 'log show' / 'log stream'\n"
     "entry: %{timestamp} %{thread} %{type} %{activity} %{pid} %{ttl} %{process}: %{message}\n"
-    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z\"\n"
-    "field thread: type=word\n"
+    "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z\" color=#8A8A8A\n"
+    "field thread: type=word color=#626262\n"
     "field type: type=enum values=Default|Info|Debug|Error|Fault severity=yes\n"
-    "field activity: type=word\n"
-    "field pid: type=int\n"
-    "field ttl: type=int\n"
-    "field process: type=word\n"
+    "field activity: type=word color=#626262\n"
+    "field pid: type=int color=#626262\n"
+    "field ttl: type=int color=#626262\n"
+    "field process: type=word color=#00AFAF\n"
     "field message: type=string\n",
 
     "name: apache\n"
     "description: Apache/nginx common log format\n"
     "entry: %{host} %{ident} %{user} [%{timestamp}] \"%{request}\" %{status} %{size}\n"
-    "field timestamp: type=timestamp format=\"%d/%b/%Y:%H:%M:%S %z\"\n"
-    "field host: type=word\n"
-    "field ident: type=word\n"
-    "field user: type=word\n"
+    "field timestamp: type=timestamp format=\"%d/%b/%Y:%H:%M:%S %z\" color=#8A8A8A\n"
+    "field host: type=word color=#5FAFD7\n"
+    "field ident: type=word color=#626262\n"
+    "field user: type=word color=#626262\n"
     "field request: type=string\n"
     "field status: type=int\n"
-    "field size: type=word unit=bytes\n",
+    "field size: type=word unit=bytes color=#626262\n",
 };
 
 #define N_BUILTIN ((int)(sizeof BI_TEXTS / sizeof BI_TEXTS[0]))

@@ -79,87 +79,129 @@ static void clamp_view(UI *ui)
 /* ------------------------------------------------------------------ */
 /* drawing                                                             */
 
-static void build_sgr(char *out, size_t outsz, int sev, int cont, int rev)
+/* SGR for one character cell.
+ *   cl:  0 = literal text between fields, f+1 = inside field f
+ *   sev: severity class of the whole entry (-1 unknown)
+ *   rev: reverse video (cursor line, toggled inside search matches)
+ * Continuations render dim. Error/fatal entries are tinted red as a
+ * whole; otherwise each field uses its template colour and the severity
+ * field is coloured by its class. */
+static void cell_sgr(char *out, size_t outsz, const Template *t,
+                     const Entry *e, int sev, int cl, int rev)
 {
-    const char *col = "";
-    switch (sev) {
-    case 5: col = ";1;31"; break;
-    case 4: col = ";31"; break;
-    case 3: col = ";33"; break;
-    case 1: col = ";36"; break;
-    case 0: col = ";90"; break;
-    default: break;
+    char col[24] = "";
+
+    if (!e->matched) {
+        if (e->cont)
+            strcpy(col, ";2");
+    } else if (sev >= 5) {
+        strcpy(col, ";1;31");
+    } else if (sev == 4) {
+        strcpy(col, ";31");
+    } else if (cl > 0) {
+        int f = cl - 1;
+        if (f == t->level_field) {
+            if (sev == 3)
+                strcpy(col, ";33");
+            else if (sev == 1)
+                strcpy(col, ";36");
+            else if (sev == 0)
+                strcpy(col, ";90");
+        } else if (t->fields[f].c256 >= 0) {
+            snprintf(col, sizeof col, ";38;5;%d", t->fields[f].c256);
+        }
     }
-    snprintf(out, outsz, "\x1b[0%s%s%sm", col, cont ? ";2" : "",
-             rev ? ";7" : "");
+    snprintf(out, outsz, "\x1b[0%s%sm", col, rev ? ";7" : "");
 }
 
 static void draw_entry(UI *ui, size_t ei, int iscur, int cols)
 {
     static char ex[16384];
+    static unsigned char cls[16384]; /* per-cell field class */
+    static unsigned char mat[16384]; /* per-cell search-match flag */
     const LogFile *lf = ui->lf;
+    const Template *t = lf->tpl;
     const Entry *e = &lf->ents[ei];
     const char *s = lf->buf + e->raw.off;
-    size_t n = e->raw.len, i, xl = 0;
+    const Span *fsp = e->matched ? logfile_fspans(lf, ei) : NULL;
+    size_t n = e->raw.len, i, k, xl = 0;
     size_t need = (size_t)ui->hscroll + (size_t)cols;
     size_t wstart, wlen, slen;
     int sev = -1;
-    char base[32], hilite[32];
+    char cur[32] = "", want[32];
 
     if (need > sizeof ex - 1)
         need = sizeof ex - 1;
 
-    /* expand tabs, replace control bytes */
+    /* expand tabs and replace control bytes, tracking which field each
+     * output cell belongs to */
     for (i = 0; i < n && xl < need; i++) {
         char c = s[i];
+        unsigned char cl = 0;
+        if (fsp) {
+            int f;
+            for (f = 0; f < t->nfields; f++) {
+                if (fsp[f].len && i >= fsp[f].off &&
+                    i < fsp[f].off + fsp[f].len) {
+                    cl = (unsigned char)(f + 1);
+                    break;
+                }
+            }
+        }
         if (c == '\t') {
             do {
-                ex[xl++] = ' ';
+                ex[xl] = ' ';
+                cls[xl] = cl;
+                xl++;
             } while (xl % 8 && xl < need);
-        } else if ((unsigned char)c < 32) {
-            ex[xl++] = '?';
         } else {
-            ex[xl++] = c;
+            ex[xl] = (unsigned char)c < 32 ? '?' : c;
+            cls[xl] = cl;
+            xl++;
         }
     }
 
-    if (e->matched && lf->tpl->level_field >= 0) {
-        const Span *sp = &logfile_fspans(lf, ei)[lf->tpl->level_field];
+    if (fsp && t->level_field >= 0) {
+        const Span *sp = &fsp[t->level_field];
         sev = severity_class(s + sp->off, sp->len);
     }
-    build_sgr(base, sizeof base, sev, e->cont, iscur);
-    build_sgr(hilite, sizeof hilite, sev, e->cont, !iscur);
+
+    /* mark search matches */
+    slen = strlen(ui->search);
+    if (xl)
+        memset(mat, 0, xl);
+    if (slen) {
+        size_t pos = 0;
+        long r;
+        while (pos < xl &&
+               (r = find_sub(ex + pos, xl - pos, ui->search, slen, 1)) >=
+                   0) {
+            size_t st = pos + (size_t)r, en = st + slen;
+            if (en > xl)
+                en = xl;
+            for (k = st; k < en; k++)
+                mat[k] = 1;
+            pos = st + 1;
+        }
+    }
 
     wstart = (size_t)ui->hscroll < xl ? (size_t)ui->hscroll : xl;
     wlen = xl - wstart;
     if (wlen > (size_t)cols)
         wlen = (size_t)cols;
 
-    term_writes(base);
-    slen = strlen(ui->search);
-    if (slen == 0) {
-        term_write(ex + wstart, wlen);
-    } else {
-        int inm_prev = 0;
-        size_t k;
-        for (k = 0; k < wlen; k++) {
-            size_t g = wstart + k;
-            /* inside any search match? */
-            int inm = 0;
-            size_t from = g + 1 >= slen ? g + 1 - slen : 0;
-            size_t m;
-            for (m = from; m <= g && !inm; m++) {
-                if (m + slen <= xl &&
-                    find_sub(ex + m, slen, ui->search, slen, 1) == 0)
-                    inm = 1;
-            }
-            if (inm != inm_prev) {
-                term_writes(inm ? hilite : base);
-                inm_prev = inm;
-            }
-            term_write(ex + g, 1);
+    for (k = 0; k < wlen; k++) {
+        size_t g = wstart + k;
+        int rev = mat[g] ? !iscur : iscur;
+        cell_sgr(want, sizeof want, t, e, sev, cls[g], rev);
+        if (strcmp(want, cur)) {
+            term_writes(want);
+            strcpy(cur, want);
         }
+        term_write(ex + g, 1);
     }
+    if (iscur && wlen == 0)
+        term_writes("\x1b[7m \x1b[0m"); /* keep empty cursor lines visible */
     term_writes("\x1b[0m");
 }
 

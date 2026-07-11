@@ -25,6 +25,8 @@ typedef struct {
     char tsfmt[64];               /* timestamp format (FT_TIMESTAMP) */
     char *values[TPL_MAX_VALUES]; /* allowed values (FT_ENUM), longest first */
     int nvalues;
+    int rgb;  /* display colour 0xRRGGBB from color=#..., or -1 */
+    int c256; /* the same colour as an xterm-256 index, or -1 */
 } TField;
 
 typedef struct {
@@ -76,5 +78,8 @@ const char *field_type_name(FieldType ft);
 /* Classify a severity value: 0 trace, 1 debug, 2 info, 3 warning,
  * 4 error, 5 fatal; -1 unknown. */
 int severity_class(const char *v, size_t n);
+
+/* Nearest xterm-256 palette index for a 24-bit colour. */
+int rgb_to_256(int r, int g, int b);
 
 #endif

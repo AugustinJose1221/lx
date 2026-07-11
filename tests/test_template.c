@@ -162,6 +162,46 @@ int main(void)
         template_free(&c);
     }
 
+    /* --- field colours ------------------------------------------------ */
+    {
+        Template c;
+        const char *def =
+            "entry: %{a} %{b} %{c} %{message}\n"
+            "field a: type=word color=#5FAFD7\n"
+            "field b: type=word color=FF0000\n"
+            "field c: type=word color=#f00\n";
+        OK(template_parse_text(&c, def, err, sizeof err) == 0);
+        OK(c.fields[0].rgb == 0x5FAFD7);
+        OK(c.fields[0].c256 == 74);
+        OK(c.fields[1].rgb == 0xFF0000);
+        OK(c.fields[1].c256 == 196);
+        OK(c.fields[2].rgb == 0xFF0000); /* #RGB expands */
+        OK(c.fields[3].rgb == -1);       /* undeclared: no colour */
+        template_free(&c);
+        OK(template_parse_text(&c,
+                               "entry: %{a}\nfield a: color=#12345\n", err,
+                               sizeof err) != 0); /* bad hex length */
+        OK(template_parse_text(&c,
+                               "entry: %{a}\nfield a: color=#GGGGGG\n", err,
+                               sizeof err) != 0); /* bad hex digits */
+    }
+
+    /* --- rgb -> xterm-256 mapping -------------------------------------- */
+    OK(rgb_to_256(0xFF, 0x00, 0x00) == 196);
+    OK(rgb_to_256(0x00, 0x00, 0x00) == 16);
+    OK(rgb_to_256(0xFF, 0xFF, 0xFF) == 231);
+    OK(rgb_to_256(0x8A, 0x8A, 0x8A) == 245); /* grayscale ramp */
+
+    /* --- built-in default palette --------------------------------------- */
+    t = template_builtin("syslog");
+    OK(t->fields[template_field_index(t, "timestamp", 9)].c256 >= 0);
+    OK(t->fields[template_field_index(t, "host", 4)].rgb == 0x5FAFD7);
+    OK(t->fields[template_field_index(t, "message", 7)].rgb == -1);
+    t = template_builtin("macos");
+    OK(t->fields[template_field_index(t, "process", 7)].rgb == 0x00AFAF);
+    /* the severity field keeps class-based colouring, not a fixed one */
+    OK(t->fields[template_field_index(t, "type", 4)].rgb == -1);
+
     /* --- severity classes -------------------------------------------- */
     OK(severity_class("ERR", 3) == 4);
     OK(severity_class("error", 5) == 4);

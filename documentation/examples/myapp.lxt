@@ -13,7 +13,10 @@ description: MyApp console output
 
 entry: %{time} | %{level} | %{module} | %{message}
 
-field time: type=timestamp format="%H:%M:%S.%f"
+# color= takes a hex code (#RRGGBB, RRGGBB or #RGB); it is mapped to
+# the nearest xterm-256 colour. The level field needs no colour: it is
+# coloured by severity class automatically.
+field time: type=timestamp format="%H:%M:%S.%f" color=#8A8A8A
 field level: type=enum values=TRACE|DEBUG|INFO|WARN|ERROR
-field module: type=word
+field module: type=word color=#5FAFD7
 field message: type=string

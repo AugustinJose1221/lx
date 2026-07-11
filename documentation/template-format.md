@@ -65,6 +65,7 @@ filters on those names.
 | `values=`   | enum        | allowed values, separated by `\|` (or commas inside quotes). Setting `values=` implies `type=enum`. |
 | `unit=`     | int, float  | informational unit (`s`, `ms`, `bytes`, ...); shown in the Enter field inspector. |
 | `severity=` | all         | `severity=yes` marks this field as the severity field driving per-line colouring, when its name alone (`level`, `severity`, ...) would not identify it — e.g. the `type` column of the macOS unified log. |
+| `color=`    | all         | display colour for the field's text as a hex code: `#RRGGBB`, `RRGGBB` or `#RGB`. Mapped to the nearest xterm-256 colour, so it works in every 256-colour terminal (including Terminal.app). |
 
 ### Field types
 
@@ -105,9 +106,32 @@ human typing `timestamp >= "2026-06-01 19:00:00"` means.
 * A line that does not match is a **continuation** of the previous
   entry (stack traces, wrapped messages). Continuations inherit their
   parent's filter visibility and are dimmed in the UI.
-* If the template declares a field named `level`, `severity`, `lvl`,
-  `loglevel`, `priority` or `pri`, its value drives per-line colouring
-  (fatal/error red, warning yellow, debug cyan, trace grey).
+## Colours
+
+Every built-in template ships with a default colour set (grey
+timestamps, blue hosts, teal process/logger names, ...), and custom
+templates can colour any field with `color=#RRGGBB`.
+
+Severity always wins over field colours:
+
+* If the template has a severity field — one named `level`, `severity`,
+  `lvl`, `loglevel`, `priority` or `pri`, or one marked `severity=yes` —
+  its value classifies the entry.
+* **Error** entries are tinted red and **fatal/critical** entries bold
+  red across the whole line, overriding field colours so problems stand
+  out when scrolling.
+* On other entries the severity field itself is coloured by class
+  (warning yellow, debug cyan, trace grey) while the remaining fields
+  use their `color=` values.
+* Continuation lines are dimmed.
+
+Example:
+
+```
+field time: type=timestamp format="%H:%M:%S.%f" color=#8A8A8A
+field module: type=word color=#5FAFD7
+field level: type=enum values=INFO|WARN|ERROR    # severity: no color= needed
+```
 
 ## Built-in templates
 
