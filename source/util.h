@@ -22,4 +22,8 @@ int str_ieq(const char *a, const char *b);
 /* Trim leading/trailing whitespace in place; returns the advanced pointer. */
 char *trim(char *s);
 
+/* Bounded string copy with guaranteed NUL termination (strlcpy-like).
+ * Truncation is silent and intentional. */
+void xcopy(char *dst, size_t dstsz, const char *src);
+
 #endif

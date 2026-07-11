@@ -1,6 +1,7 @@
 /* Interactive vi/less-style viewer. */
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -494,9 +495,12 @@ static int prompt(UI *ui, char pfx, char *buf, size_t bufsz)
     }
 }
 
-static void set_msg(UI *ui, const char *fmt, const char *a1, const char *a2)
+static void set_msg(UI *ui, const char *fmt, ...)
 {
-    snprintf(ui->msg, sizeof ui->msg, fmt, a1, a2);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(ui->msg, sizeof ui->msg, fmt, ap);
+    va_end(ap);
 }
 
 static void do_filter(UI *ui, const char *expr)
@@ -504,12 +508,12 @@ static void do_filter(UI *ui, const char *expr)
     char err[256];
     FNode *f = filter_compile(expr, ui->lf->tpl, err, sizeof err);
     if (!f) {
-        set_msg(ui, "filter error: %s%s", err, "");
+        set_msg(ui, "filter error: %s", err);
         return;
     }
     filter_free(ui->filter);
     ui->filter = f;
-    snprintf(ui->filter_str, sizeof ui->filter_str, "%s", expr);
+    xcopy(ui->filter_str, sizeof ui->filter_str, expr);
     filter_apply(f, ui->lf);
     rebuild(ui);
     ui->cur = ui->top = 0;
@@ -520,7 +524,7 @@ static void do_filter(UI *ui, const char *expr)
 static void clear_filter(UI *ui)
 {
     if (!ui->filter) {
-        set_msg(ui, "no filter active%s%s", "", "");
+        set_msg(ui, "no filter active");
         return;
     }
     filter_free(ui->filter);
@@ -528,7 +532,7 @@ static void clear_filter(UI *ui)
     ui->filter_str[0] = 0;
     filter_apply(NULL, ui->lf);
     rebuild(ui);
-    set_msg(ui, "filter cleared%s%s", "", "");
+    set_msg(ui, "filter cleared");
 }
 
 static void goto_line(UI *ui, size_t lineno)
@@ -553,8 +557,8 @@ static void refilter_after_template_change(UI *ui)
         filter_free(ui->filter);
         ui->filter = nf;
         if (!nf) {
-            set_msg(ui, "filter cleared (not valid for new template: %s)%s",
-                    err, "");
+            set_msg(ui, "filter cleared (not valid for new template: %s)",
+                    err);
             ui->filter_str[0] = 0;
         }
     }
@@ -568,7 +572,7 @@ static void switch_template(UI *ui, const char *arg)
     char err[256];
 
     if (!*arg) {
-        set_msg(ui, "usage: :template NAME | file.lxt%s%s", "", "");
+        set_msg(ui, "usage: :template NAME | file.lxt");
         return;
     }
     nt = template_builtin(arg);
@@ -620,7 +624,7 @@ static void exec_command(UI *ui, char *cmd)
         ui->quit = 1;
     } else if (!strcmp(s, "f") || !strcmp(s, "filter")) {
         if (!*arg)
-            set_msg(ui, "usage: :filter EXPR%s%s", "", "");
+            set_msg(ui, "usage: :filter EXPR");
         else
             do_filter(ui, arg);
     } else if (!strcmp(s, "clear")) {
@@ -630,7 +634,7 @@ static void exec_command(UI *ui, char *cmd)
     } else if (!strcmp(s, "help") || !strcmp(s, "h")) {
         show_help();
     } else {
-        set_msg(ui, "unknown command: %s%s", s, "");
+        set_msg(ui, "unknown command: %s", s);
     }
 }
 
@@ -648,7 +652,7 @@ static void search_move(UI *ui, int dir, int inclusive)
 {
     long n = (long)ui->nvis, start, k;
     if (!ui->search[0]) {
-        set_msg(ui, "no search pattern%s%s", "", "");
+        set_msg(ui, "no search pattern");
         return;
     }
     if (!n)
@@ -659,12 +663,12 @@ static void search_move(UI *ui, int dir, int inclusive)
         if (entry_contains(ui, ui->vis[idx])) {
             if ((dir > 0 && idx < (long)ui->cur) ||
                 (dir < 0 && idx > (long)ui->cur))
-                set_msg(ui, "search wrapped%s%s", "", "");
+                set_msg(ui, "search wrapped");
             ui->cur = (size_t)idx;
             return;
         }
     }
-    set_msg(ui, "pattern not found: %s%s", ui->search, "");
+    set_msg(ui, "pattern not found: %s", ui->search);
 }
 
 /* ------------------------------------------------------------------ */
@@ -677,12 +681,12 @@ static void set_follow(UI *ui, int on)
     ui->follow = on;
     if (on) {
         ui->watch_fd = fswatch_open(ui->lf->path);
-        set_msg(ui, "follow mode on%s%s", "", "");
+        set_msg(ui, "follow mode on");
     } else {
         if (ui->watch_fd >= 0)
             fswatch_close(ui->watch_fd);
         ui->watch_fd = -1;
-        set_msg(ui, "follow mode off%s%s", "", "");
+        set_msg(ui, "follow mode off");
     }
 }
 
@@ -709,7 +713,7 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow)
     ui.filter = filter;
     ui.watch_fd = -1;
     if (filter)
-        snprintf(ui.filter_str, sizeof ui.filter_str, "%s", filter_str);
+        xcopy(ui.filter_str, sizeof ui.filter_str, filter_str);
     rebuild(&ui);
 
     if (term_init()) {
@@ -795,7 +799,7 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow)
             break;
         case '/':
             if (prompt(&ui, '/', inbuf, sizeof inbuf) && inbuf[0]) {
-                snprintf(ui.search, sizeof ui.search, "%s", inbuf);
+                xcopy(ui.search, sizeof ui.search, inbuf);
                 search_move(&ui, 1, 1);
             }
             break;

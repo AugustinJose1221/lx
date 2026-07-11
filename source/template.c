@@ -311,7 +311,7 @@ static int parse_field_attrs(Template *t, int fi, const char *val, char *err,
             }
             f->type = (FieldType)ty;
         } else if (KEQ("format")) {
-            snprintf(f->tsfmt, sizeof f->tsfmt, "%s", vbuf);
+            xcopy(f->tsfmt, sizeof f->tsfmt, vbuf);
             if (f->type == FT_STRING)
                 f->type = FT_TIMESTAMP;
         } else if (KEQ("values")) {
@@ -338,7 +338,7 @@ static int parse_field_attrs(Template *t, int fi, const char *val, char *err,
                 f->type = FT_ENUM;
             sort_values_by_len(f);
         } else if (KEQ("unit")) {
-            snprintf(f->unit, sizeof f->unit, "%s", vbuf);
+            xcopy(f->unit, sizeof f->unit, vbuf);
         } else if (KEQ("severity")) {
             if (str_ieq(vbuf, "yes") || str_ieq(vbuf, "true") ||
                 !strcmp(vbuf, "1"))
@@ -403,9 +403,9 @@ int template_parse_text(Template *t, const char *text, char *err,
         val = trim(c + 1);
 
         if (!strcmp(key, "name")) {
-            snprintf(t->name, sizeof t->name, "%s", val);
+            xcopy(t->name, sizeof t->name, val);
         } else if (!strcmp(key, "description")) {
-            snprintf(t->desc, sizeof t->desc, "%s", val);
+            xcopy(t->desc, sizeof t->desc, val);
         } else if (!strcmp(key, "entry")) {
             if (parse_pattern(t, val, err, errsz))
                 return -1;
@@ -429,13 +429,13 @@ int template_parse_text(Template *t, const char *text, char *err,
         return -1;
     }
     if (!t->name[0])
-        snprintf(t->name, sizeof t->name, "custom");
+        xcopy(t->name, sizeof t->name, "custom");
 
     for (i = 0; i < t->nfields; i++) {
         size_t k;
         if (t->fields[i].type == FT_TIMESTAMP && !t->fields[i].tsfmt[0])
-            snprintf(t->fields[i].tsfmt, sizeof t->fields[i].tsfmt,
-                     "%%Y-%%m-%%d %%H:%%M:%%S");
+            xcopy(t->fields[i].tsfmt, sizeof t->fields[i].tsfmt,
+                  "%Y-%m-%d %H:%M:%S");
         for (k = 0; k < sizeof LEVEL_NAMES / sizeof LEVEL_NAMES[0]; k++) {
             if (t->level_field < 0 &&
                 str_ieq(t->fields[i].name, LEVEL_NAMES[k]))

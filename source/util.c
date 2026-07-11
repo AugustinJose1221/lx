@@ -81,6 +81,17 @@ int str_ieq(const char *a, const char *b)
     return *a == *b;
 }
 
+void xcopy(char *dst, size_t dstsz, const char *src)
+{
+    size_t n = strlen(src);
+    if (!dstsz)
+        return;
+    if (n >= dstsz)
+        n = dstsz - 1;
+    memcpy(dst, src, n);
+    dst[n] = 0;
+}
+
 char *trim(char *s)
 {
     size_t l;
