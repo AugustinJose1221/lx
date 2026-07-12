@@ -16,7 +16,11 @@ lx kern.log -t dmesg       # parse as Linux kernel log
 lx app.log -T myapp.lxt    # parse with a custom template
 lx app.log -g myapp.lxt    # create a template interactively (wizard)
 lx svc.log -F              # follow a growing file (tail -f)
-lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
+lx app.log -P -f 'level==ERR && message ~ timeout'   # print mode
+
+journalctl -b | lx         # read the log from a pipe ...
+log show --last 1h | lx    # ... (keyboard comes from the terminal)
+journalctl -f | lx -F      # live-follow a stream interactively
 ```
 
 ## Features
@@ -52,7 +56,13 @@ lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
   yellow on the level field, continuations dimmed.
 - **Follow mode** (`-F` or `F`): inotify on Linux, kqueue on macOS,
   polling elsewhere; handles file truncation/rotation.
-- **Pipe mode** (`-P`): print filtered lines to stdout for scripts.
+- **Piped input**: `journalctl -b | lx`, `log show --last 1h | lx`,
+  `dmesg | lx` — no flag needed (`-` also accepted). The viewer stays
+  fully interactive (keyboard from the controlling terminal), live
+  streams keep flowing in (`journalctl -f | lx -F`), and `(EOF)`
+  shows when the producer closes the pipe. See platform notes below.
+- **Print mode** (`-P`): print filtered lines to stdout for scripts;
+  with piped input it consumes the stream to EOF first, like grep.
 
 ## Building
 
@@ -66,6 +76,26 @@ Requires only a C99 compiler and make. Linux and macOS build out of the
 box; other POSIX systems fall back to a generic backend
 (`source/posix/fswatch_poll.c`). Windows sources live in
 `source/windows` (Win32 console + VT output).
+
+## Platform notes (piped input)
+
+Explicitly, per platform:
+
+- **Linux, macOS** — fully supported and tested. Interactive use with
+  a pipe re-opens the keyboard from `/dev/tty`, so a controlling
+  terminal is required: in environments without one (cron, detached
+  daemons, CI) interactive mode cannot start — use `-P` there. New
+  pipe data wakes the viewer instantly (`select` on the pipe).
+- **Windows** — the keyboard is re-opened from `CONIN$`; console and
+  pipe handles cannot be waited on together, so new pipe data is
+  polled about every 500 ms (streamed lines may lag up to half a
+  second). The Windows backend ships with the source but is **not
+  regularly tested** — treat it as best effort.
+- **All platforms** — `-P` reads the pipe to EOF before printing, so a
+  never-ending producer (`journalctl -f`) keeps it running until
+  interrupted. The template wizard (`-g`) also consumes the whole pipe
+  before prompting and cannot re-open the stream afterwards; it prints
+  the `lx -T` command to run instead.
 
 ## Try it
 

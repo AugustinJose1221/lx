@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "fswatch.h"
+#include "pipein.h"
 #include "term.h"
 #include "ui.h"
 #include "util.h"
@@ -272,6 +273,9 @@ static void draw(UI *ui)
     CLAMP_OFF();
     if (ui->follow)
         off += snprintf(buf + off, sizeof buf - (size_t)off, "  FOLLOW");
+    CLAMP_OFF();
+    if (ui->lf->stream && ui->lf->stream_eof)
+        off += snprintf(buf + off, sizeof buf - (size_t)off, "  (EOF)");
     CLAMP_OFF();
 #undef CLAMP_OFF
     if (off > C)
@@ -735,7 +739,10 @@ static void set_follow(UI *ui, int on)
         return;
     ui->follow = on;
     if (on) {
-        ui->watch_fd = fswatch_open(ui->lf->path);
+        /* streams are watched via the pipe itself; only files need a
+         * filesystem watch */
+        if (!ui->lf->stream)
+            ui->watch_fd = fswatch_open(ui->lf->path);
         set_msg(ui, "follow mode on");
     } else {
         if (ui->watch_fd >= 0)
@@ -793,8 +800,23 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow,
         int k;
 
         draw(&ui);
-        k = term_read_key(ui.follow ? 500 : -1,
-                          ui.follow ? ui.watch_fd : -1);
+        {
+            /* a live pipe wakes the loop through its own fd (or a
+             * 500 ms poll where fds are unavailable); file follow
+             * mode uses the fswatch fd plus a poll fallback */
+            int xfd = -1, tmo = -1;
+            if (ui.lf->stream) {
+                if (!ui.lf->stream_eof) {
+                    xfd = pipein_fd();
+                    if (xfd < 0)
+                        tmo = 500;
+                }
+            } else if (ui.follow) {
+                xfd = ui.watch_fd;
+                tmo = 500;
+            }
+            k = term_read_key(tmo, xfd);
+        }
         if (k != TKEY_NONE && k != TKEY_FSEVENT && k != TKEY_RESIZE)
             ui.msg[0] = 0;
 
@@ -886,12 +908,12 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow,
             }
             break;
         case TKEY_FSEVENT:
-            if (ui.watch_fd >= 0)
+            if (!ui.lf->stream && ui.watch_fd >= 0)
                 fswatch_drain(ui.watch_fd);
             do_refresh(&ui);
             break;
-        case TKEY_NONE: /* follow-mode poll tick */
-            if (ui.follow)
+        case TKEY_NONE: /* poll tick (follow mode / pipe polling) */
+            if (ui.follow || ui.lf->stream)
                 do_refresh(&ui);
             break;
         default:

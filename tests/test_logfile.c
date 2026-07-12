@@ -1,11 +1,61 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "logfile.h"
 #include "template.h"
 #include "test.h"
 
 #define TMPFILE "lx_test_logfile.tmp"
+
+/* Stream mode: feed a pipe into fd 0 and load with path "-". */
+static void test_stream(void)
+{
+    LogFile lf;
+    int fds[2], old0;
+
+    OK(pipe(fds) == 0);
+    old0 = dup(0);
+    OK(dup2(fds[0], 0) == 0);
+
+    OK(write(fds[1], "[    1.0] one\n[    2.0] two\n", 28) == 28);
+    OK(logfile_load(&lf, "-", template_builtin("dmesg")) == 0);
+    OK(lf.stream == 1);
+    OK(lf.stream_eof == 0);
+    OK(lf.nents == 2);
+    OK(lf.nmatched == 2);
+    OK(!strcmp(lf.path, "(stdin)"));
+
+    /* a partial line arrives ... */
+    OK(write(fds[1], "[    3.0] thr", 13) == 13);
+    OK(logfile_refresh(&lf) == 1);
+    OK(lf.nents == 3);
+    OK(lf.unterminated == 1);
+
+    /* ... and is completed by the next chunk */
+    OK(write(fds[1], "ee\n[    4.0] four\n", 18) == 18);
+    OK(logfile_refresh(&lf) == 1);
+    OK(lf.nents == 4);
+    OK(lf.nmatched == 4);
+    OK(lf.ents[2].raw.len == strlen("[    3.0] three"));
+    OK(!memcmp(lf.buf + lf.ents[2].raw.off, "[    3.0] three",
+               lf.ents[2].raw.len));
+
+    /* nothing new */
+    OK(logfile_refresh(&lf) == 0);
+
+    /* producer closes the pipe */
+    close(fds[1]);
+    OK(logfile_refresh(&lf) == 1);
+    OK(lf.stream_eof == 1);
+    OK(logfile_refresh(&lf) == 0);
+    OK(lf.nents == 4);
+
+    logfile_free(&lf);
+    dup2(old0, 0);
+    close(old0);
+    close(fds[0]);
+}
 
 int main(void)
 {
@@ -76,5 +126,8 @@ int main(void)
 
     logfile_free(&lf);
     remove(TMPFILE);
+
+    test_stream();
+
     return TEST_REPORT("test_logfile");
 }

@@ -13,13 +13,31 @@
 static HANDLE g_in, g_out;
 static DWORD g_in_orig, g_out_orig;
 static int g_raw = 0;
+static int g_in_own = 0; /* g_in is an opened CONIN$, not the std handle */
 static char g_ob[65536];
 static size_t g_ol = 0;
 static int g_last_rows = 0, g_last_cols = 0;
 
+int term_stdin_redirected(void)
+{
+    return !_isatty(_fileno(stdin));
+}
+
 int term_is_tty(void)
 {
-    return _isatty(_fileno(stdin)) && _isatty(_fileno(stdout));
+    HANDLE h;
+    if (!_isatty(_fileno(stdout)))
+        return 0;
+    if (_isatty(_fileno(stdin)))
+        return 1;
+    /* stdin carries piped data; keyboard comes from the console */
+    h = CreateFileA(TERM_TTY_DEVICE, GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                    OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    CloseHandle(h);
+    return 1;
 }
 
 void term_flush(void)
@@ -66,7 +84,17 @@ int term_init(void)
 
     if (!term_is_tty())
         return -1;
-    g_in = GetStdHandle(STD_INPUT_HANDLE);
+    if (_isatty(_fileno(stdin))) {
+        g_in = GetStdHandle(STD_INPUT_HANDLE);
+        g_in_own = 0;
+    } else {
+        g_in = CreateFileA(TERM_TTY_DEVICE, GENERIC_READ | GENERIC_WRITE,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           OPEN_EXISTING, 0, NULL);
+        if (g_in == INVALID_HANDLE_VALUE)
+            return -1;
+        g_in_own = 1;
+    }
     g_out = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!GetConsoleMode(g_in, &g_in_orig) ||
         !GetConsoleMode(g_out, &g_out_orig))
@@ -99,6 +127,10 @@ void term_shutdown(void)
     term_flush();
     SetConsoleMode(g_in, g_in_orig);
     SetConsoleMode(g_out, g_out_orig);
+    if (g_in_own) {
+        CloseHandle(g_in);
+        g_in_own = 0;
+    }
     g_raw = 0;
 }
 

@@ -5,6 +5,7 @@
 #include "filter.h"
 #include "logfile.h"
 #include "lx.h"
+#include "pipein.h"
 #include "template.h"
 #include "term.h"
 #include "ui.h"
@@ -12,7 +13,8 @@
 
 static void usage(FILE *o)
 {
-    fputs("usage: lx [options] <logfile>\n"
+    fputs("usage: lx [options] [logfile]\n"
+          "       <producer> | lx [options] [-]\n"
           "\n"
           "options:\n"
           "  -t <name>   parse with a built-in template (see -l)\n"
@@ -33,8 +35,12 @@ static void usage(FILE *o)
           "  -V, --version  show version\n"
           "\n"
           "Without -t/-T the template is auto-detected from the file\n"
-          "contents. See lx(1) and documentation/template-format.md for\n"
-          "the template file format and the filter language.\n",
+          "contents. With no logfile (or '-') the log is read from a\n"
+          "pipe on standard input, e.g. 'journalctl -b | lx' or\n"
+          "'log show --last 5m | lx'; the keyboard then comes from the\n"
+          "controlling terminal. See lx(1) and\n"
+          "documentation/template-format.md for the template file format\n"
+          "and the filter language.\n",
           o);
 }
 
@@ -107,7 +113,17 @@ int main(int argc, char **argv)
     }
 
     if (!file) {
-        usage(stderr);
+        if (term_stdin_redirected()) {
+            file = "-"; /* piped input: producer | lx */
+        } else {
+            usage(stderr);
+            return 2;
+        }
+    }
+    if (!strcmp(file, "-") && !term_stdin_redirected()) {
+        fprintf(stderr,
+                "lx: '-' reads the log from a pipe, e.g.: "
+                "journalctl -b | lx -\n");
         return 2;
     }
 
@@ -146,6 +162,14 @@ int main(int argc, char **argv)
         if (!fn) {
             fprintf(stderr, "lx: filter: %s\n", err);
             return 2;
+        }
+    }
+
+    /* -P on a pipe behaves like grep: consume everything, then print */
+    if (print && lf.stream) {
+        while (!lf.stream_eof) {
+            pipein_wait(1000);
+            logfile_refresh(&lf);
         }
     }
     filter_apply(fn, &lf);

@@ -1,6 +1,7 @@
 /* POSIX terminal backend: termios raw mode + ANSI escape sequences.
  * Shared by Linux, macOS and other Unix systems. */
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,7 @@
 
 static struct termios g_orig;
 static int g_raw = 0;
+static int g_in = 0; /* keyboard fd: stdin, or /dev/tty for piped logs */
 static volatile sig_atomic_t g_winch = 0;
 static char g_ob[65536];
 static size_t g_ol = 0;
@@ -23,9 +25,25 @@ static void on_winch(int sig)
     g_winch = 1;
 }
 
+int term_stdin_redirected(void)
+{
+    return !isatty(0);
+}
+
 int term_is_tty(void)
 {
-    return isatty(0) && isatty(1);
+    int fd;
+    if (!isatty(1))
+        return 0;
+    if (isatty(0))
+        return 1;
+    /* stdin carries piped data; the keyboard needs the controlling
+     * terminal instead */
+    fd = open(TERM_TTY_DEVICE, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    close(fd);
+    return 1;
 }
 
 void term_flush(void)
@@ -75,9 +93,16 @@ int term_init(void)
     struct termios t;
     struct sigaction sa;
 
-    if (!term_is_tty())
+    if (!isatty(1))
         return -1;
-    if (tcgetattr(0, &g_orig))
+    if (isatty(0)) {
+        g_in = 0;
+    } else {
+        g_in = open(TERM_TTY_DEVICE, O_RDONLY);
+        if (g_in < 0)
+            return -1;
+    }
+    if (tcgetattr(g_in, &g_orig))
         return -1;
     t = g_orig;
     t.c_lflag &= ~(tcflag_t)(ECHO | ICANON | ISIG | IEXTEN);
@@ -86,7 +111,7 @@ int term_init(void)
     t.c_cflag |= CS8;
     t.c_cc[VMIN] = 1;
     t.c_cc[VTIME] = 0;
-    if (tcsetattr(0, TCSAFLUSH, &t))
+    if (tcsetattr(g_in, TCSAFLUSH, &t))
         return -1;
     g_raw = 1;
 
@@ -106,7 +131,10 @@ void term_shutdown(void)
         return;
     term_writes("\x1b[?7h\x1b[0m\x1b[?25h\x1b[?1049l");
     term_flush();
-    tcsetattr(0, TCSAFLUSH, &g_orig);
+    tcsetattr(g_in, TCSAFLUSH, &g_orig);
+    if (g_in > 2)
+        close(g_in);
+    g_in = 0;
     g_raw = 0;
 }
 
@@ -128,12 +156,12 @@ static int read_byte(int timeout_ms, int extra_fd, int *from_extra)
 {
     fd_set rf;
     struct timeval tv, *tvp = NULL;
-    int maxfd = 0, rc;
+    int maxfd = g_in, rc;
     unsigned char b;
     ssize_t n;
 
     FD_ZERO(&rf);
-    FD_SET(0, &rf);
+    FD_SET(g_in, &rf);
     if (extra_fd >= 0) {
         FD_SET(extra_fd, &rf);
         if (extra_fd > maxfd)
@@ -149,11 +177,12 @@ static int read_byte(int timeout_ms, int extra_fd, int *from_extra)
         return errno == EINTR ? -3 : -2;
     if (rc == 0)
         return -1;
-    if (extra_fd >= 0 && FD_ISSET(extra_fd, &rf) && !FD_ISSET(0, &rf)) {
+    if (extra_fd >= 0 && FD_ISSET(extra_fd, &rf) &&
+        !FD_ISSET(g_in, &rf)) {
         *from_extra = 1;
         return 0;
     }
-    n = read(0, &b, 1);
+    n = read(g_in, &b, 1);
     if (n <= 0)
         return -2;
     return b;

@@ -26,15 +26,20 @@ typedef struct {
     const Template *tpl;
     size_t nmatched, nvisible;
     int unterminated; /* last line has no trailing newline (yet) */
+    int stream;       /* reading a pipe on stdin instead of a file */
+    int stream_eof;   /* the pipe reached end of stream */
 } LogFile;
 
 /* Load a file. When tpl is NULL, autodetect a built-in template.
+ * The path "-" reads piped data from standard input instead: the
+ * initial burst is consumed (waiting for the producer to pause or
+ * close), further data arrives via logfile_refresh().
  * Returns 0 on success, -1 on I/O error. */
 int logfile_load(LogFile *lf, const char *path, const Template *tpl);
 
-/* Re-read the file: appended data is parsed incrementally, a truncated
- * file is reloaded. Returns 1 if anything changed, 0 otherwise, -1 on
- * error. */
+/* Re-read the source: appended file data (or newly piped bytes in
+ * stream mode) is parsed incrementally; a truncated file is reloaded.
+ * Returns 1 if anything changed, 0 otherwise, -1 on error. */
 int logfile_refresh(LogFile *lf);
 
 /* Re-parse every line with a different template. */

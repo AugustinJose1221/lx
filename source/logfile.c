@@ -4,7 +4,10 @@
 #include <string.h>
 
 #include "logfile.h"
+#include "pipein.h"
 #include "util.h"
+
+#define STREAM_CHUNK 65536
 
 const Span *logfile_fspans(const LogFile *lf, size_t idx)
 {
@@ -66,6 +69,56 @@ static void parse_from(LogFile *lf, size_t start)
     }
 }
 
+/* Parse everything appended to lf->buf since the last parse; a
+ * previously unterminated tail line is re-parsed from its start. */
+static void parse_appended(LogFile *lf)
+{
+    size_t start;
+
+    if (lf->unterminated && lf->nents) {
+        lf->nents--;
+        if (lf->ents[lf->nents].matched)
+            lf->nmatched--;
+        start = lf->ents[lf->nents].raw.off;
+        lf->unterminated = 0;
+    } else if (lf->nents) {
+        size_t last = lf->ents[lf->nents - 1].raw.off;
+        const char *nl = memchr(lf->buf + last, '\n', lf->len - last);
+        start = nl ? (size_t)(nl - lf->buf) + 1 : lf->len;
+    } else {
+        start = 0;
+    }
+    parse_from(lf, start);
+}
+
+/* Pull whatever the pipe has right now. Returns 1 when bytes arrived
+ * or the stream ended. */
+static int stream_pull(LogFile *lf)
+{
+    int changed = 0;
+
+    if (lf->stream_eof)
+        return 0;
+    for (;;) {
+        long r;
+        lf->buf = xgrow(lf->buf, &lf->cap, lf->len + STREAM_CHUNK + 1, 1);
+        r = pipein_read(lf->buf + lf->len, STREAM_CHUNK);
+        if (r > 0) {
+            lf->len += (size_t)r;
+            changed = 1;
+            continue;
+        }
+        if (r < 0) {
+            lf->stream_eof = 1;
+            changed = 1;
+        }
+        break;
+    }
+    if (changed)
+        lf->buf[lf->len] = 0;
+    return changed;
+}
+
 static int read_whole(LogFile *lf, FILE *fp)
 {
     size_t n;
@@ -90,15 +143,49 @@ int logfile_load(LogFile *lf, const char *path, const Template *tpl)
     FILE *fp;
 
     memset(lf, 0, sizeof *lf);
-    fp = fopen(path, "rb");
-    if (!fp)
-        return -1;
-    lf->path = xstrdup(path);
-    if (read_whole(lf, fp)) {
+
+    if (!strcmp(path, "-")) {
+        /* piped standard input: consume the initial burst, then let
+         * logfile_refresh() stream the rest */
+        lf->stream = 1;
+        lf->path = xstrdup("(stdin)");
+        if (pipein_start())
+            return -1;
+        lf->cap = 1 << 16;
+        lf->buf = xmalloc(lf->cap);
+        for (;;) {
+            long r;
+            lf->buf = xgrow(lf->buf, &lf->cap, lf->len + STREAM_CHUNK + 1,
+                            1);
+            r = pipein_read(lf->buf + lf->len, STREAM_CHUNK);
+            if (r > 0) {
+                lf->len += (size_t)r;
+                continue;
+            }
+            if (r < 0) {
+                lf->stream_eof = 1;
+                break;
+            }
+            if (lf->len == 0) {
+                pipein_wait(200); /* nothing yet: wait for first data */
+                continue;
+            }
+            /* got a burst; stop once the producer pauses briefly */
+            if (!pipein_wait(150))
+                break;
+        }
+        lf->buf[lf->len] = 0;
+    } else {
+        fp = fopen(path, "rb");
+        if (!fp)
+            return -1;
+        lf->path = xstrdup(path);
+        if (read_whole(lf, fp)) {
+            fclose(fp);
+            return -1;
+        }
         fclose(fp);
-        return -1;
     }
-    fclose(fp);
 
     lf->tpl = tpl ? tpl : template_autodetect(lf->buf, lf->len);
     parse_from(lf, 0);
@@ -110,7 +197,14 @@ int logfile_refresh(LogFile *lf)
 {
     FILE *fp;
     long sz;
-    size_t start, n;
+    size_t n;
+
+    if (lf->stream) {
+        if (!stream_pull(lf))
+            return 0;
+        parse_appended(lf);
+        return 1;
+    }
 
     fp = fopen(lf->path, "rb");
     if (!fp)
@@ -154,20 +248,7 @@ int logfile_refresh(LogFile *lf)
     fclose(fp);
     lf->buf[lf->len] = 0;
 
-    if (lf->unterminated && lf->nents) {
-        /* the previous tail line may have been completed: re-parse it */
-        lf->nents--;
-        if (lf->ents[lf->nents].matched)
-            lf->nmatched--;
-        start = lf->ents[lf->nents].raw.off;
-    } else {
-        start = lf->nents ? lf->ents[lf->nents - 1].raw.off : 0;
-        if (lf->nents) {
-            const char *nl = memchr(lf->buf + start, '\n', lf->len - start);
-            start = nl ? (size_t)(nl - lf->buf) + 1 : lf->len;
-        }
-    }
-    parse_from(lf, start);
+    parse_appended(lf);
     return 1;
 }
 

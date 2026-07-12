@@ -3,7 +3,11 @@
 lx \- view, navigate and filter log files in the terminal
 .SH SYNOPSIS
 .B lx
-[\fIoptions\fR] \fIlogfile\fR
+[\fIoptions\fR] [\fIlogfile\fR]
+.br
+\fIproducer\fR |
+.B lx
+[\fIoptions\fR] [\fB\-\fR]
 .SH DESCRIPTION
 .B lx
 is an interactive, vi\-style viewer for log files (.log, .txt).
@@ -20,6 +24,12 @@ Without
 or
 .B \-T
 the template is auto\-detected from the file contents.
+.PP
+When no \fIlogfile\fR is given (or it is \fB\-\fR) and standard input is
+not a terminal, the log is read from the pipe:
+\fBjournalctl \-b | lx\fR, \fBlog show \-\-last 5m | lx\fR,
+\fBdmesg | lx\fR. See
+.BR "PIPED INPUT" .
 .SH OPTIONS
 .TP
 .BI \-t " name"
@@ -225,6 +235,45 @@ field colours: error entries are tinted red and fatal entries bold red
 across the whole line; on other entries the severity field is coloured
 by its class (warning yellow, debug cyan, trace grey). Continuation
 lines are dimmed.
+.SH PIPED INPUT
+With piped input the interactive viewer works as usual: the log data
+comes from the pipe while the keyboard is read from the controlling
+terminal. A stream that keeps producing (e.g.
+.BR "journalctl \-f" ,
+.BR "log stream" ,
+.BR "dmesg \-w" )
+keeps flowing into the viewer; press
+.B F
+(or start with
+.BR \-F )
+to pin the view to the newest entries. When the producer closes the
+pipe, \fB(EOF)\fR appears in the status bar. The template is
+auto\-detected from the first burst of data unless \fB\-t\fR/\fB\-T\fR
+is given.
+.PP
+Platform behaviour differs; explicitly:
+.TP
+.B Linux, macOS
+Fully supported. The keyboard is re\-opened from \fI/dev/tty\fR, so a
+controlling terminal is required: in environments without one (cron
+jobs, detached daemons, CI) interactive mode cannot start \(em use
+\fB\-P\fR there. New pipe data wakes the viewer immediately via
+select(2).
+.TP
+.B Windows
+The keyboard is re\-opened from \fICONIN$\fR. Console and pipe handles
+cannot be waited on together here, so new pipe data is polled roughly
+every 500 ms \(em streamed lines can appear with up to half a second of
+delay. The Windows backend ships with the source but is not regularly
+tested; treat it as best effort.
+.TP
+.B All platforms
+\fB\-P\fR reads the pipe to end\-of\-stream before printing, like
+grep(1); with a producer that never ends (\fBjournalctl \-f\fR) it will
+run until interrupted. The template wizard (\fB\-g\fR) likewise
+consumes the whole pipe before prompting, and cannot re\-open the
+stream afterwards \(em it prints the matching \fBlx \-T\fR command to
+run instead.
 .SH TEMPLATE WIZARD
 .B lx app.log \-g myapp.lxt
 builds a template interactively, in the spirit of
@@ -263,6 +312,12 @@ Follow a growing log file.
 .TP
 .B lx app.log \-P \-f 'status >= 500' | wc \-l
 Count server errors in a pipeline.
+.TP
+.B log show \-\-last 1h | lx \-f 'type==Error || type==Fault'
+View the last hour of the macOS unified log, pre\-filtered.
+.TP
+.B journalctl \-f | lx \-F
+Live\-follow the systemd journal interactively.
 .SH SEE ALSO
 .BR less (1),
 .BR journalctl (1),

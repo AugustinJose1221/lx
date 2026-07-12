@@ -23,9 +23,23 @@ enum {
     TKEY_FSEVENT /* extra_fd became readable (file watch) */
 };
 
+/* Device the keyboard falls back to when stdin carries piped log data. */
+#ifdef _WIN32
+#define TERM_TTY_DEVICE "CONIN$"
+#else
+#define TERM_TTY_DEVICE "/dev/tty"
+#endif
+
+/* Interactive use is possible: stdout is a terminal, and keyboard input
+ * is available either on stdin or via TERM_TTY_DEVICE (so piped logs
+ * still allow an interactive session). */
+int term_is_tty(void);
+
+/* stdin is not a terminal (piped or redirected input). */
+int term_stdin_redirected(void);
+
 int term_init(void);
 void term_shutdown(void);
-int term_is_tty(void);
 void term_get_size(int *rows, int *cols);
 
 /* Wait up to timeout_ms (-1 = forever) for a key press. When extra_fd is

@@ -421,12 +421,16 @@ static void print_preview(const Template *t, const char *s, size_t n)
 
 /* ------------------------------------------------------------------ */
 
+/* Read a file, or all of standard input when path is "-" (piped log
+ * data; blocks until the producer closes the pipe). */
 static char *read_file(const char *path, size_t *lenout)
 {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp;
     char *buf;
     size_t cap = 1 << 16, len = 0, n;
+    int from_stdin = !strcmp(path, "-");
 
+    fp = from_stdin ? stdin : fopen(path, "rb");
     if (!fp)
         return NULL;
     buf = xmalloc(cap);
@@ -437,7 +441,8 @@ static char *read_file(const char *path, size_t *lenout)
             buf = xrealloc(buf, cap);
         }
     }
-    fclose(fp);
+    if (!from_stdin)
+        fclose(fp);
     buf[len] = 0;
     *lenout = len;
     return buf;
@@ -488,6 +493,8 @@ int wizard_run(const char *logpath, const char *outpath)
     Template tpl;
     char err[256];
 
+    int from_stdin = !strcmp(logpath, "-");
+
     if (!term_is_tty()) {
         fprintf(stderr, "lx: the template wizard needs a terminal\n");
         return -1;
@@ -496,6 +503,16 @@ int wizard_run(const char *logpath, const char *outpath)
     if (!buf) {
         fprintf(stderr, "lx: cannot read '%s'\n", logpath);
         return -1;
+    }
+    if (from_stdin) {
+        /* the pipe is exhausted; prompts read from the terminal */
+        if (!freopen(TERM_TTY_DEVICE, "r", stdin)) {
+            fprintf(stderr,
+                    "lx: cannot open the terminal for wizard prompts\n");
+            free(buf);
+            return -1;
+        }
+        logpath = "(stdin)";
     }
     nlines = collect_lines(buf, blen, lines, MAX_SAMPLES);
     if (!nlines) {
@@ -790,11 +807,17 @@ int wizard_run(const char *logpath, const char *outpath)
         fputs(lxt, fp);
         fclose(fp);
     }
-    printf("Wrote %s. Use it with: lx %s -T %s\n", outpath, logpath,
-           outpath);
     template_free(&tpl);
     free(buf);
 
+    if (from_stdin) {
+        /* the piped data is consumed; it cannot be re-opened */
+        printf("Wrote %s. Use it with: <producer> | lx -T %s\n", outpath,
+               outpath);
+        return 1;
+    }
+    printf("Wrote %s. Use it with: lx %s -T %s\n", outpath, logpath,
+           outpath);
     {
         int r = ask_yn("open the log with the new template now?", 1);
         if (r == 1)

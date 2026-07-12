@@ -16,13 +16,13 @@ UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
 CORE := main.c util.c tstamp.c template.c filter.c logfile.c ui.c wizard.c
 
 ifeq ($(UNAME_S),Darwin)
-  PLAT := posix/term_posix.c darwin/fswatch_darwin.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c darwin/fswatch_darwin.c
   DEFS := -D_DARWIN_C_SOURCE
 else ifeq ($(UNAME_S),Linux)
-  PLAT := posix/term_posix.c linux/fswatch_linux.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c linux/fswatch_linux.c
   DEFS := -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 else
-  PLAT := posix/term_posix.c posix/fswatch_poll.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c posix/fswatch_poll.c
   DEFS := -D_POSIX_C_SOURCE=200809L
 endif
 
