@@ -919,6 +919,14 @@ int ui_run(LogFile *lf, const char *filter_str, FNode *filter, int follow,
         default:
             break;
         }
+
+        /* tail -f semantics: navigating away from the newest entry
+         * pauses follow so scrollback stays readable while data keeps
+         * arriving; F (or G, which returns to the end) resumes it */
+        if (ui.follow && ui.nvis && ui.cur + 1 < ui.nvis) {
+            set_follow(&ui, 0);
+            set_msg(&ui, "follow paused; press F to resume");
+        }
     }
 
     set_follow(&ui, 0);

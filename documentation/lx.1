@@ -142,7 +142,13 @@ Search (case\-insensitive substring); \fBn\fR / \fBN\fR jump to the
 next / previous match.
 .TP
 .B F
-Toggle follow mode.
+Toggle follow mode: the view sticks to the newest entry as data
+arrives, like
+.BR "tail \-f" .
+Navigating away from the newest entry (k, PageUp, g, a search jump,
+...) pauses follow so scrollback stays readable; press
+.B F
+again to resume. Without follow mode the view never moves on its own.
 .TP
 .BI : filter " expr"
 Filter the entries (see
@@ -242,12 +248,18 @@ terminal. A stream that keeps producing (e.g.
 .BR "journalctl \-f" ,
 .BR "log stream" ,
 .BR "dmesg \-w" )
-keeps flowing into the viewer; press
+keeps flowing into the viewer. The view only auto\-scrolls in follow
+mode (press
 .B F
-(or start with
-.BR \-F )
-to pin the view to the newest entries. When the producer closes the
-pipe, \fB(EOF)\fR appears in the status bar. The template is
+or start with
+.BR \-F ),
+exactly like
+.BR "tail \-f" ;
+otherwise new entries accumulate without moving the view, and while
+following, any manual navigation pauses the auto\-scroll until
+.B F
+is pressed again. When the producer closes the pipe, \fB(EOF)\fR
+appears in the status bar. The template is
 auto\-detected from the first burst of data unless \fB\-t\fR/\fB\-T\fR
 is given.
 .PP

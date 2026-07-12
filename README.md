@@ -54,8 +54,11 @@ journalctl -f | lx -F      # live-follow a stream interactively
   with a default palette. Severity (from the template's `level`/`type`
   field) overrides: error lines red, fatal lines bold red, warnings
   yellow on the level field, continuations dimmed.
-- **Follow mode** (`-F` or `F`): inotify on Linux, kqueue on macOS,
-  polling elsewhere; handles file truncation/rotation.
+- **Follow mode** (`-F` or `F`): auto-scrolls to the newest entry like
+  `tail -f` — and *only* in follow mode; otherwise the view never moves
+  on its own. Navigating while following pauses the auto-scroll (press
+  `F` to resume). Backed by inotify on Linux, kqueue on macOS, polling
+  elsewhere; handles file truncation/rotation.
 - **Piped input**: `journalctl -b | lx`, `log show --last 1h | lx`,
   `dmesg | lx` — no flag needed (`-` also accepted). The viewer stays
   fully interactive (keyboard from the controlling terminal), live
