@@ -13,7 +13,7 @@ PREFIX  ?= /usr/local
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
 
-CORE := main.c util.c tstamp.c template.c filter.c logfile.c ui.c
+CORE := main.c util.c tstamp.c template.c filter.c logfile.c ui.c wizard.c
 
 ifeq ($(UNAME_S),Darwin)
   PLAT := posix/term_posix.c darwin/fswatch_darwin.c
@@ -30,7 +30,7 @@ SRC := $(CORE) $(PLAT)
 OBJ := $(SRC:%.c=$(BUILD)/obj/%.o)
 LIBOBJ := $(filter-out $(BUILD)/obj/main.o,$(OBJ))
 
-TESTS := test_tstamp test_template test_filter test_logfile
+TESTS := test_tstamp test_template test_filter test_logfile test_wizard
 TESTBIN := $(TESTS:%=$(BUILD)/tests/%)
 
 all: $(BIN)

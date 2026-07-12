@@ -14,6 +14,7 @@ isolated per platform under `source/posix`, `source/linux`,
 lx app.log                 # open with template auto-detection
 lx kern.log -t dmesg       # parse as Linux kernel log
 lx app.log -T myapp.lxt    # parse with a custom template
+lx app.log -g myapp.lxt    # create a template interactively (wizard)
 lx svc.log -F              # follow a growing file (tail -f)
 lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
 ```
@@ -39,6 +40,11 @@ lx app.log -P -f 'level==ERR && message ~ timeout'   # pipe mode
   field with its type, unit and value. Long values wrap over multiple
   lines (500 characters by default; `-d n` allows up to `n` wrapped
   lines per value).
+- **Template wizard** (`-g out.lxt`): builds a `.lxt` interactively in
+  the style of `git add -p` — the sample line is auto-split into
+  timestamps, levels, numbers and words; every prompt has a default,
+  colours are previewed live, and the result is validated against the
+  log (match rate reported) before it is written.
 - **Colour**: every field can carry a `color=#RRGGBB` hex code in its
   template (mapped to the nearest xterm-256 colour); all built-ins ship
   with a default palette. Severity (from the template's `level`/`type`

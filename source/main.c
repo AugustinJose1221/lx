@@ -8,6 +8,7 @@
 #include "template.h"
 #include "term.h"
 #include "ui.h"
+#include "wizard.h"
 
 static void usage(FILE *o)
 {
@@ -16,6 +17,9 @@ static void usage(FILE *o)
           "options:\n"
           "  -t <name>   parse with a built-in template (see -l)\n"
           "  -T <file>   parse with a template loaded from <file> (.lxt)\n"
+          "  -g <file>   interactively create a template for the log and\n"
+          "              write it to <file> (.lxt), then offer to open the\n"
+          "              log with it\n"
           "  -f <expr>   apply a filter expression at startup,\n"
           "              e.g. -f 'level==ERR && message ~ timeout'\n"
           "  -F          start in follow mode (like tail -f)\n"
@@ -46,6 +50,7 @@ static void list_templates(void)
 int main(int argc, char **argv)
 {
     const char *file = NULL, *tname = NULL, *tfile = NULL, *fexpr = NULL;
+    const char *genfile = NULL;
     int follow = 0, print = 0, detail_lines = 0, i, rc;
     static Template custom;
     const Template *tpl = NULL;
@@ -60,6 +65,8 @@ int main(int argc, char **argv)
                 tname = argv[++i];
             } else if (!strcmp(a, "-T") && i + 1 < argc) {
                 tfile = argv[++i];
+            } else if (!strcmp(a, "-g") && i + 1 < argc) {
+                genfile = argv[++i];
             } else if (!strcmp(a, "-f") && i + 1 < argc) {
                 fexpr = argv[++i];
             } else if (!strcmp(a, "-F")) {
@@ -102,6 +109,15 @@ int main(int argc, char **argv)
     if (!file) {
         usage(stderr);
         return 2;
+    }
+
+    if (genfile) {
+        int wrc = wizard_run(file, genfile);
+        if (wrc < 0)
+            return 1;
+        if (wrc == 1)
+            return 0;
+        tfile = genfile; /* open the log with the new template */
     }
 
     if (tfile) {

@@ -29,6 +29,12 @@ Parse with the built\-in template \fIname\fR (see \fB\-l\fR).
 Parse with a template definition loaded from \fIfile\fR (see
 .BR "TEMPLATE FILES" ).
 .TP
+.BI \-g " file"
+Interactively create a template for \fIlogfile\fR and write it to
+\fIfile\fR (see
+.BR "TEMPLATE WIZARD" ),
+then offer to open the log with it.
+.TP
 .BI \-f " expr"
 Apply the filter expression \fIexpr\fR at startup (see
 .BR FILTERS ).
@@ -219,6 +225,25 @@ field colours: error entries are tinted red and fatal entries bold red
 across the whole line; on other entries the severity field is coloured
 by its class (warning yellow, debug cyan, trace grey). Continuation
 lines are dimmed.
+.SH TEMPLATE WIZARD
+.B lx app.log \-g myapp.lxt
+builds a template interactively, in the spirit of
+.BR "git add \-p" :
+every question shows its default in [brackets] and Enter accepts it.
+The wizard picks a sample line from the log (you can choose another),
+splits it into pieces using heuristics \(em timestamps (with a detected
+format), severity keywords (offered as enums with a matching value
+set), numbers, words, bracketed tokens, and a trailing free\-text
+message \(em and then walks through each piece: name it, adjust its
+type, format, values, unit and colour, answer '\-' to turn a piece into
+literal text, or '*' to take everything from there to the end of the
+line as one final field. Timestamp formats are validated against the
+sample as you type them.
+.PP
+Before writing anything the wizard shows a colour preview of the sample
+line, the full generated template, and how many lines of the log the
+template actually matches. The written file is a normal \fI.lxt\fR you
+can edit by hand afterwards.
 .SH EXIT STATUS
 0 on success, 1 on I/O errors, 2 on usage errors (bad option, unknown
 template, invalid filter).

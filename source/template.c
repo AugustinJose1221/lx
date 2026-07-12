@@ -41,6 +41,11 @@ static int type_from_name(const char *s)
     return -1;
 }
 
+int field_type_parse(const char *name)
+{
+    return type_from_name(name);
+}
+
 int template_field_index(const Template *t, const char *name, size_t namelen)
 {
     int i;
@@ -137,6 +142,11 @@ static int parse_hex_color(const char *s)
     }
     return (d[0] << 20) | (d[1] << 16) | (d[2] << 12) | (d[3] << 8) |
            (d[4] << 4) | d[5];
+}
+
+int template_parse_color(const char *s)
+{
+    return parse_hex_color(s);
 }
 
 /* ------------------------------------------------------------------ */

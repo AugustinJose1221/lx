@@ -8,6 +8,11 @@ Templates are plain text files, conventionally with the `.lxt`
 extension, loaded with `lx file.log -T my.lxt` (or at runtime with
 `:template my.lxt`).
 
+You don't have to write them by hand: `lx file.log -g my.lxt` starts an
+interactive wizard that splits a sample line, suggests names, types,
+timestamp formats and colours, validates the result against the log,
+and writes the file for you.
+
 ## Anatomy
 
 ```

@@ -75,6 +75,12 @@ int template_match(const Template *t, const char *s, size_t len, Span *fsp,
 
 const char *field_type_name(FieldType ft);
 
+/* Parse a type name ("string", "int", ...) -> FieldType, or -1. */
+int field_type_parse(const char *name);
+
+/* Parse "#RRGGBB", "RRGGBB" or "#RGB" -> 0xRRGGBB, or -1. */
+int template_parse_color(const char *s);
+
 /* Classify a severity value: 0 trace, 1 debug, 2 info, 3 warning,
  * 4 error, 5 fatal; -1 unknown. */
 int severity_class(const char *v, size_t n);
