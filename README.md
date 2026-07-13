@@ -44,6 +44,9 @@ journalctl -f | lx -F      # live-follow a stream interactively
   field with its type, unit and value. Long values wrap over multiple
   lines (500 characters by default; `-d n` allows up to `n` wrapped
   lines per value).
+- **Template export** (`-e name`): print any built-in template as
+  editable `.lxt` text — `lx -e serilog > mine.lxt` is a quick starting
+  point for a custom template.
 - **Template wizard** (`-g out.lxt`): builds a `.lxt` interactively in
   the style of `git add -p` — the sample line is auto-split into
   timestamps, levels, numbers and words; every prompt has a default,
@@ -67,12 +70,20 @@ journalctl -f | lx -F      # live-follow a stream interactively
 - **Print mode** (`-P`): print filtered lines to stdout for scripts;
   with piped input it consumes the stream to EOF first, like grep.
 
-## Building
+## Building & installing
 
 ```
 make            # builds build/lx
 make test       # builds and runs the unit tests
 make install    # installs lx + man page (PREFIX=/usr/local)
+```
+
+One-command install (build + binary + man page, sudo only when
+needed, man database refresh on Linux):
+
+```
+scripts/install.sh              # Linux / macOS (optional arg: PREFIX)
+scripts\install.bat             # Windows: installs to %LOCALAPPDATA%\Programs\lx
 ```
 
 Requires only a C99 compiler and make. Linux and macOS build out of the
@@ -110,10 +121,14 @@ Explicitly, per platform:
 
 ```
 make
-./build/lx tests/data/python.log            # auto-detects 'python'
-./build/lx tests/data/serilog.log -f 'level==ERR'
+./build/lx documentation/examples/macos.log            # auto-detects
+./build/lx documentation/examples/apache.log -f 'status >= 400'
 ./build/lx documentation/examples/myapp.log -T documentation/examples/myapp.lxt
+./build/lx -e serilog > mine.lxt                       # export a built-in
 ```
+
+[documentation/examples/](documentation/examples/) has a sample log for
+every built-in template with suggested filters to try.
 
 Inside the viewer: `?` shows all key bindings, `Enter` inspects an
 entry, `:filter level==ERROR` filters, `:clear` unfilters, `q` quits.
@@ -126,6 +141,7 @@ source/posix/        termios/ANSI terminal backend, poll fallback
 source/linux/        inotify file watching
 source/darwin/       kqueue file watching
 source/windows/      Win32 console backend
+scripts/             one-command installers (install.sh, install.bat)
 tests/               unit tests + sample logs (make test)
 documentation/       man page, template format reference, examples
 ```
