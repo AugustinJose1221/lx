@@ -58,6 +58,7 @@ int main(void)
     line = "2026-06-01 19:18:23.123456+0200 0x16b3     Default     0x0"
            "                  501    0    kernel: en0: link up";
     n = wizard_segment(line, strlen(line), p, WIZ_MAX_PIECES);
+    OK(n == 15);
     OK(piece_is(line, &p[0], 1, FT_TIMESTAMP,
                 "2026-06-01 19:18:23.123456+0200"));
     /* hex thread id must be a word, not a number */
@@ -66,6 +67,24 @@ int main(void)
     OK(p[4].values && strstr(p[4].values, "Fault") != NULL);
     OK(piece_is(line, &p[8], 1, FT_INT, "501"));
     OK(piece_is(line, &p[10], 1, FT_INT, "0"));
+    /* the "proc: ..." colon collapses the rest into one message, so
+     * deep structure inside the message no longer explodes */
+    OK(piece_is(line, &p[12], 1, FT_WORD, "kernel"));
+    OK(piece_is(line, &p[13], 0, 0, ": "));
+    OK(piece_is(line, &p[14], 1, FT_STRING, "en0: link up"));
+
+    /* --- piece budget: the tail always covers to end of line ------------ */
+    line = "u[1] u[2] u[3] u[4] u[5] u[6] u[7] u[8] rest of the line";
+    n = wizard_segment(line, strlen(line), p, WIZ_MAX_PIECES);
+    OK(n <= WIZ_MAX_PIECES);
+    OK(p[n - 1].is_field && p[n - 1].type == FT_STRING);
+    OK(p[n - 1].off + p[n - 1].len == strlen(line)); /* full coverage */
+
+    /* --- trailing whitespace is not part of the pattern ----------------- */
+    line = "hello   ";
+    n = wizard_segment(line, strlen(line), p, WIZ_MAX_PIECES);
+    OK(n == 1);
+    OK(piece_is(line, &p[0], 1, FT_WORD, "hello"));
 
     /* --- python: " - " separators don't get eaten by the message ------- */
     line = "2026-06-01 19:18:23,123 - app.db - WARNING - pool exhausted";

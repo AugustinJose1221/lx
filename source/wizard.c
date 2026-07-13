@@ -116,11 +116,28 @@ int wizard_segment(const char *s, size_t n, WPiece *out, int maxp)
     size_t pos = 0;
     int np = 0;
 
+    /* trailing whitespace would end up as a trailing literal that some
+     * lines lack; the matcher tolerates extra input whitespace anyway */
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t'))
+        n--;
+
     while (pos < n && np < maxp) {
         WPiece *p = &out[np];
         size_t st = pos;
 
         memset(p, 0, sizeof *p);
+
+        /* piece budget nearly exhausted: a template that covers only a
+         * prefix of the line can never match, so everything left
+         * becomes one free-text field */
+        if (np == maxp - 1) {
+            p->is_field = 1;
+            p->type = FT_STRING;
+            p->off = pos;
+            p->len = n - pos;
+            np++;
+            break;
+        }
 
         /* literal separator run: whitespace, punctuation, and dashes
          * that have a space on either side (so "db-01" stays whole) */
@@ -131,10 +148,35 @@ int wizard_segment(const char *s, size_t n, WPiece *out, int maxp)
                   (pos + 1 < n && s[pos + 1] == ' ')))))
             pos++;
         if (pos > st) {
+            const char *colon = memchr(s + st, ':', pos - st);
+
             p->is_field = 0;
             p->off = st;
             p->len = pos - st;
             np++;
+
+            /* a colon inside a separator marks the "proc: message"
+             * convention: what follows is one free-text message, not
+             * more columns (log show, syslog, serilog, ...). End the
+             * literal right after ": " so message decorations that only
+             * some lines carry - e.g. log show's "(sender)" - stay in
+             * the message instead of the pattern. */
+            if (colon && np < maxp) {
+                size_t cut = (size_t)(colon - s) + 1;
+                while (cut < pos && (s[cut] == ' ' || s[cut] == '\t'))
+                    cut++;
+                if (cut < n) {
+                    p->len = cut - st;
+                    p = &out[np];
+                    memset(p, 0, sizeof *p);
+                    p->is_field = 1;
+                    p->type = FT_STRING;
+                    p->off = cut;
+                    p->len = n - cut;
+                    np++;
+                    break;
+                }
+            }
             continue;
         }
 
