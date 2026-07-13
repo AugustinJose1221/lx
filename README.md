@@ -77,8 +77,14 @@ make install    # installs lx + man page (PREFIX=/usr/local)
 
 Requires only a C99 compiler and make. Linux and macOS build out of the
 box; other POSIX systems fall back to a generic backend
-(`source/posix/fswatch_poll.c`). Windows sources live in
-`source/windows` (Win32 console + VT output).
+(`source/posix/fswatch_poll.c`).
+
+On **Windows**, build from an MSYS2/MinGW shell (`pacman -S
+mingw-w64-ucrt-x86_64-gcc make`, then `make`); the Makefile detects
+MinGW/MSYS (or `OS=Windows_NT` for native `mingw32-make`) and selects
+the Win32 console backend in `source/windows`, producing
+`build/lx.exe`. Cygwin intentionally builds the POSIX backend instead
+(its gcc provides termios/select and does not define `_WIN32`).
 
 ## Platform notes (piped input)
 

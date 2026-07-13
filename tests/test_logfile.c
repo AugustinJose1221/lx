@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "logfile.h"
 #include "template.h"
@@ -8,7 +7,11 @@
 
 #define TMPFILE "lx_test_logfile.tmp"
 
-/* Stream mode: feed a pipe into fd 0 and load with path "-". */
+/* Stream mode: feed a pipe into fd 0 and load with path "-".
+ * POSIX-only (pipe/dup2); skipped on Windows builds. */
+#ifndef _WIN32
+#include <unistd.h>
+
 static void test_stream(void)
 {
     LogFile lf;
@@ -56,6 +59,7 @@ static void test_stream(void)
     close(old0);
     close(fds[0]);
 }
+#endif /* !_WIN32 */
 
 int main(void)
 {
@@ -127,7 +131,9 @@ int main(void)
     logfile_free(&lf);
     remove(TMPFILE);
 
+#ifndef _WIN32
     test_stream();
+#endif
 
     return TEST_REPORT("test_logfile");
 }

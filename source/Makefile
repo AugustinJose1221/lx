@@ -4,7 +4,6 @@
 # plain C99 + the standard library.
 
 BUILD   ?= ../build
-BIN     := $(BUILD)/lx
 CC      ?= cc
 OPT     ?= -O2
 CSTD    := -std=c99
@@ -15,7 +14,25 @@ UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
 
 CORE := main.c util.c tstamp.c template.c filter.c logfile.c ui.c wizard.c
 
-ifeq ($(UNAME_S),Darwin)
+# Windows: MSYS2/MinGW shells report MINGW*_NT / MSYS_NT in uname;
+# native mingw32-make has no uname but sets OS=Windows_NT. Cygwin is
+# deliberately NOT matched - its gcc provides POSIX APIs (termios,
+# select) and does not define _WIN32, so it uses the generic POSIX
+# backend below.
+ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S)))
+  TARGET_OS := windows
+else ifeq ($(UNAME_S),unknown)
+  ifeq ($(OS),Windows_NT)
+    TARGET_OS := windows
+  endif
+endif
+
+ifeq ($(TARGET_OS),windows)
+  PLAT := windows/term_windows.c windows/fswatch_windows.c \
+          windows/pipein_windows.c
+  DEFS :=
+  EXE  := .exe
+else ifeq ($(UNAME_S),Darwin)
   PLAT := posix/term_posix.c posix/pipein_posix.c darwin/fswatch_darwin.c
   DEFS := -D_DARWIN_C_SOURCE
 else ifeq ($(UNAME_S),Linux)
@@ -25,6 +42,8 @@ else
   PLAT := posix/term_posix.c posix/pipein_posix.c posix/fswatch_poll.c
   DEFS := -D_POSIX_C_SOURCE=200809L
 endif
+
+BIN := $(BUILD)/lx$(EXE)
 
 SRC := $(CORE) $(PLAT)
 OBJ := $(SRC:%.c=$(BUILD)/obj/%.o)
