@@ -1,0 +1,8 @@
+starting backup of /home to /mnt/backup
+scanning 128,412 files
+skipped 12 unreadable files (permission denied)
+copying changed files ... 4,812 of 4,812
+verifying checksums
+warning: /home/user/todo.txt changed while copying, re-copied
+backup finished in 4m12s, 3.2 GiB written
+next scheduled run: tomorrow 03:00

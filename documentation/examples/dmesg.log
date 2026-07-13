@@ -1,0 +1,9 @@
+[    0.000000] Linux version 6.8.0-40-generic (buildd@lcy02-amd64-078) (gcc 13.2.0)
+[    0.004211] Command line: BOOT_IMAGE=/boot/vmlinuz-6.8.0-40-generic root=UUID=ab12cd34 ro quiet splash
+[    0.410833] pci 0000:00:1f.2: [8086:a352] type 00 class 0x010601
+[    1.201933] usb 1-1: new high-speed USB device number 2 using xhci_hcd
+[    1.352902] usb 1-1: New USB device found, idVendor=046d, idProduct=c52b, bcdDevice=12.11
+[    2.581004] EXT4-fs (nvme0n1p2): mounted filesystem with ordered data mode
+[   12.345678] wlp3s0: authenticated with aa:bb:cc:dd:ee:ff
+[   14.002190] audit: type=1400 audit(1720855000.123:42): apparmor="DENIED" operation="open"
+[  100.220145] perf: interrupt took too long (2513 > 2500), lowering kernel.perf_event_max_sample_rate

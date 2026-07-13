@@ -1,0 +1,13 @@
+2026-07-13 09:15:02,104 - root - INFO - service starting
+2026-07-13 09:15:02,581 - app.db - DEBUG - opening connection pool (size 10)
+2026-07-13 09:16:41,330 - app.api - INFO - listening on 0.0.0.0:8000
+2026-07-13 09:18:07,717 - app.db - WARNING - pool nearly exhausted (9/10)
+2026-07-13 09:18:09,001 - app.api - ERROR - request failed: ConnectionError
+Traceback (most recent call last):
+  File "app/api.py", line 42, in handle
+    resp = fetch(url, timeout=5)
+  File "app/net.py", line 17, in fetch
+    raise ConnectionError(errno.ECONNREFUSED)
+ConnectionError: [Errno 111] Connection refused
+2026-07-13 09:18:12,010 - app.db - INFO - reconnected to replica
+2026-07-13 09:24:56,444 - root - CRITICAL - shutting down
