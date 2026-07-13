@@ -42,6 +42,17 @@ int main(void)
     line = "no timestamp at all";
     OK(template_match(t, line, strlen(line), sp, fn) == 0);
 
+    /* real-world serilog: ' +02:00 [INF] msg' (no colon after ]) is
+     * covered by the second entry pattern */
+    line = "2026-07-12 10:23:45.123 +02:00 [INF] Application started";
+    OK(template_match(t, line, strlen(line), sp, fn) == 1);
+    OK(span_eq(line, sp[template_field_index(t, "level", 5)], "INF"));
+    OK(span_eq(line, sp[template_field_index(t, "message", 7)],
+               "Application started"));
+    line = "2026-07-12 10:23:45.123 +02:00 [ERR] boom";
+    OK(template_match(t, line, strlen(line), sp, fn) == 1);
+    OK(span_eq(line, sp[template_field_index(t, "level", 5)], "ERR"));
+
     /* --- dmesg: float with unit ------------------------------------ */
     t = template_builtin("dmesg");
     line = "[   12.345678] usb 1-1: new device";
@@ -122,6 +133,32 @@ int main(void)
         OK(template_parse_text(&c, "entry: %{a:nosuch}\n", err,
                                sizeof err) != 0);
         OK(template_parse_text(&c, "bogus stuff\n", err, sizeof err) != 0);
+    }
+
+    /* --- multiple entry patterns (line-shape variants) ----------------- */
+    {
+        Template c;
+        const char *def =
+            "entry: <%{level}> %{message}\n"
+            "entry: %{level} - %{message}\n"
+            "field level: type=enum values=GOOD|BAD\n";
+        OK(template_parse_text(&c, def, err, sizeof err) == 0);
+        OK(c.nvars == 2);
+        line = "<GOOD> first shape";
+        OK(template_match(&c, line, strlen(line), sp, fn) == 1);
+        OK(span_eq(line, sp[1], "first shape"));
+        line = "BAD - second shape";
+        OK(template_match(&c, line, strlen(line), sp, fn) == 1);
+        OK(span_eq(line, sp[0], "BAD"));
+        OK(span_eq(line, sp[1], "second shape"));
+        line = "GOOD ~ neither shape";
+        OK(template_match(&c, line, strlen(line), sp, fn) == 0);
+        template_free(&c);
+        /* variant limit enforced */
+        OK(template_parse_text(&c,
+                               "entry: %{a}\nentry: %{a}\nentry: %{a}\n"
+                               "entry: %{a}\nentry: %{a}\n",
+                               err, sizeof err) != 0);
     }
 
     /* --- inline type in the entry pattern ---------------------------- */

@@ -203,12 +203,20 @@ int ts_parse(const char *s, size_t n, const char *fmt, double *out,
                 tz = sign * (hh * 3600L + mm * 60L);
                 break;
             }
-            case 'Z':
+            case 'Z': {
+                /* optional zone name; if no alphabetic name follows,
+                 * consume nothing (the skipped spaces may belong to a
+                 * literal separator after the timestamp) */
+                size_t save = i, a;
                 while (i < n && s[i] == ' ')
                     i++;
+                a = i;
                 while (i < n && isalpha((unsigned char)s[i]))
                     i++;
+                if (i == a)
+                    i = save;
                 break;
+            }
             case '%':
                 if (i < n && s[i] == '%')
                     i++;

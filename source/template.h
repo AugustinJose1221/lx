@@ -8,6 +8,7 @@
 #define TPL_MAX_FIELDS 16
 #define TPL_MAX_TOKENS 48
 #define TPL_MAX_VALUES 24
+#define TPL_MAX_VARIANTS 4
 
 typedef enum {
     FT_STRING = 0, /* greedy text (up to the next literal / end of line) */
@@ -35,13 +36,20 @@ typedef struct {
     int litlen;
 } TToken;
 
+/* One entry pattern. A template may declare several 'entry:' lines
+ * (line-shape variants); matching tries them in order. */
+typedef struct {
+    TToken toks[TPL_MAX_TOKENS];
+    int ntoks;
+} TVariant;
+
 typedef struct {
     char name[32];
     char desc[96];
     TField fields[TPL_MAX_FIELDS];
     int nfields;
-    TToken toks[TPL_MAX_TOKENS];
-    int ntoks;
+    TVariant vars[TPL_MAX_VARIANTS];
+    int nvars;
     int level_field; /* index of the severity field, or -1 */
 } Template;
 

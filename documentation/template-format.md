@@ -52,6 +52,17 @@ filters on those names.
 
 ## The entry pattern
 
+A template may declare **several `entry:` lines** (up to 4). They are
+tried in order and the first one that matches wins — useful when a
+logger emits a couple of line shapes. The built-in `serilog` does this:
+
+```
+entry: %{timestamp} [%{level}]: %{message}
+entry: %{timestamp} [%{level}] %{message}
+```
+
+Within a pattern:
+
 * `%{name}` — a field placeholder. Fields not declared elsewhere
   default to `type=string`.
 * `%{name:type}` — placeholder with an inline type

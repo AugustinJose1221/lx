@@ -152,17 +152,17 @@ int template_parse_color(const char *s)
 /* ------------------------------------------------------------------ */
 /* template definition parsing                                         */
 
-static int push_lit(Template *t, const char *lit, int len, char *err,
+static int push_lit(TVariant *v, const char *lit, int len, char *err,
                     size_t errsz)
 {
     while (len > 0) {
         TToken *tk;
         int c = len < 63 ? len : 63;
-        if (t->ntoks == TPL_MAX_TOKENS) {
+        if (v->ntoks == TPL_MAX_TOKENS) {
             snprintf(err, errsz, "entry pattern too complex");
             return -1;
         }
-        tk = &t->toks[t->ntoks++];
+        tk = &v->toks[v->ntoks++];
         tk->field = -1;
         memcpy(tk->lit, lit, (size_t)c);
         tk->lit[c] = 0;
@@ -179,6 +179,14 @@ static int parse_pattern(Template *t, const char *val, char *err,
     char lit[64];
     int ll = 0;
     const char *p = val;
+    TVariant *v;
+
+    if (t->nvars == TPL_MAX_VARIANTS) {
+        snprintf(err, errsz, "too many entry patterns (max %d)",
+                 TPL_MAX_VARIANTS);
+        return -1;
+    }
+    v = &t->vars[t->nvars];
 
     while (*p) {
         if (p[0] == '%' && p[1] == '{') {
@@ -189,7 +197,7 @@ static int parse_pattern(Template *t, const char *val, char *err,
             const char *e = strchr(p + 2, '}');
 
             if (ll) {
-                if (push_lit(t, lit, ll, err, errsz))
+                if (push_lit(v, lit, ll, err, errsz))
                     return -1;
                 ll = 0;
             }
@@ -223,38 +231,39 @@ static int parse_pattern(Template *t, const char *val, char *err,
                 }
                 t->fields[fi].type = (FieldType)tt;
             }
-            if (t->ntoks == TPL_MAX_TOKENS) {
+            if (v->ntoks == TPL_MAX_TOKENS) {
                 snprintf(err, errsz, "entry pattern too complex");
                 return -1;
             }
-            t->toks[t->ntoks].field = fi;
-            t->toks[t->ntoks].lit[0] = 0;
-            t->toks[t->ntoks].litlen = 0;
-            t->ntoks++;
+            v->toks[v->ntoks].field = fi;
+            v->toks[v->ntoks].lit[0] = 0;
+            v->toks[v->ntoks].litlen = 0;
+            v->ntoks++;
             p = e + 1;
         } else if (p[0] == '%' && p[1] == '%') {
             lit[ll++] = '%';
             p += 2;
             if (ll == 63) {
-                if (push_lit(t, lit, ll, err, errsz))
+                if (push_lit(v, lit, ll, err, errsz))
                     return -1;
                 ll = 0;
             }
         } else {
             lit[ll++] = *p++;
             if (ll == 63) {
-                if (push_lit(t, lit, ll, err, errsz))
+                if (push_lit(v, lit, ll, err, errsz))
                     return -1;
                 ll = 0;
             }
         }
     }
-    if (ll && push_lit(t, lit, ll, err, errsz))
+    if (ll && push_lit(v, lit, ll, err, errsz))
         return -1;
-    if (!t->ntoks) {
+    if (!v->ntoks) {
         snprintf(err, errsz, "empty entry pattern");
         return -1;
     }
+    t->nvars++;
     return 0;
 }
 
@@ -378,7 +387,7 @@ int template_parse_text(Template *t, const char *text, char *err,
                         size_t errsz)
 {
     const char *p = text;
-    int lno = 0, has_entry = 0, i;
+    int lno = 0, i;
     static const char *LEVEL_NAMES[] = { "level",    "severity", "lvl",
                                          "loglevel", "priority", "pri" };
 
@@ -419,7 +428,6 @@ int template_parse_text(Template *t, const char *text, char *err,
         } else if (!strcmp(key, "entry")) {
             if (parse_pattern(t, val, err, errsz))
                 return -1;
-            has_entry = 1;
         } else if (!strncmp(key, "field", 5) &&
                    (key[5] == ' ' || key[5] == '\t')) {
             char *fname = trim(key + 5);
@@ -434,7 +442,7 @@ int template_parse_text(Template *t, const char *text, char *err,
         }
     }
 
-    if (!has_entry) {
+    if (!t->nvars) {
         snprintf(err, errsz, "template has no 'entry:' pattern");
         return -1;
     }
@@ -526,8 +534,9 @@ static int iswordch(char c)
     return isalnum((unsigned char)c) || c == '_';
 }
 
-int template_match(const Template *t, const char *s, size_t len, Span *fsp,
-                   double *fnum)
+static int match_variant(const Template *t, const TVariant *v,
+                         const char *s, size_t len, Span *fsp,
+                         double *fnum)
 {
     size_t i = 0;
     int ti;
@@ -538,8 +547,8 @@ int template_match(const Template *t, const char *s, size_t len, Span *fsp,
         fnum[ti] = NAN;
     }
 
-    for (ti = 0; ti < t->ntoks; ti++) {
-        const TToken *tk = &t->toks[ti];
+    for (ti = 0; ti < v->ntoks; ti++) {
+        const TToken *tk = &v->toks[ti];
         const TField *f;
         const TToken *nx;
         size_t start;
@@ -551,7 +560,7 @@ int template_match(const Template *t, const char *s, size_t len, Span *fsp,
             continue;
         }
         f = &t->fields[tk->field];
-        nx = (ti + 1 < t->ntoks) ? &t->toks[ti + 1] : NULL;
+        nx = (ti + 1 < v->ntoks) ? &v->toks[ti + 1] : NULL;
         start = i;
 
         switch (f->type) {
@@ -669,6 +678,16 @@ int template_match(const Template *t, const char *s, size_t len, Span *fsp,
     return i == len;
 }
 
+int template_match(const Template *t, const char *s, size_t len, Span *fsp,
+                   double *fnum)
+{
+    int vi;
+    for (vi = 0; vi < t->nvars; vi++)
+        if (match_variant(t, &t->vars[vi], s, len, fsp, fnum))
+            return 1;
+    return 0;
+}
+
 int severity_class(const char *v, size_t n)
 {
     static const struct { const char *pat; int cls; } M[] = {
@@ -723,8 +742,9 @@ static const char *BI_TEXTS[] = {
     "field message: type=string\n",
 
     "name: serilog\n"
-    "description: Serilog output ('2026-06-01 19:18:23.123+2.00 UTC [INF]: msg')\n"
+    "description: Serilog output, '... [INF] msg' and '... UTC [INF]: msg' forms\n"
     "entry: %{timestamp} [%{level}]: %{message}\n"
+    "entry: %{timestamp} [%{level}] %{message}\n"
     "field timestamp: type=timestamp format=\"%Y-%m-%d %H:%M:%S.%f%z%Z\" color=#8A8A8A\n"
     "field level: type=enum values=VRB|DBG|INF|WRN|ERR|FTL\n"
     "field message: type=string\n",
