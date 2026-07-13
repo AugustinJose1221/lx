@@ -148,8 +148,10 @@ documentation/       man page, template format reference, examples
 
 ## Documentation
 
+- [documentation/usage.md](documentation/usage.md) — usage guide:
+  every flag with runnable examples, pipes, filters, follow mode
 - `man ./documentation/lx.1` — full manual
 - [documentation/template-format.md](documentation/template-format.md)
   — writing custom templates
-- [documentation/examples/](documentation/examples/) — a worked
-  custom-template example
+- [documentation/examples/](documentation/examples/) — sample logs for
+  every built-in template, plus a worked custom-template example

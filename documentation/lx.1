@@ -321,27 +321,66 @@ can edit by hand afterwards.
 0 on success, 1 on I/O errors, 2 on usage errors (bad option, unknown
 template, invalid filter).
 .SH EXAMPLES
+A longer, runnable collection lives in
+\fIdocumentation/usage.md\fR; sample logs for every built\-in template
+are in \fIdocumentation/examples/\fR.
+.SS Opening files
 .TP
 .B lx app.log
 Open a log with template auto\-detection.
 .TP
 .B lx kern.log \-t dmesg
-Parse with the kernel log template.
+Parse with a named built\-in template (list them with \fBlx \-l\fR).
 .TP
 .B lx app.log \-T myapp.lxt \-f 'level==ERROR'
 Custom template, pre\-filtered to errors.
+.SS Pipes
 .TP
-.B lx service.log \-F
-Follow a growing log file.
-.TP
-.B lx app.log \-P \-f 'status >= 500' | wc \-l
-Count server errors in a pipeline.
+.B journalctl \-b | lx
+Browse this boot's systemd journal interactively.
 .TP
 .B log show \-\-last 1h | lx \-f 'type==Error || type==Fault'
-View the last hour of the macOS unified log, pre\-filtered.
+The last hour of the macOS unified log, pre\-filtered.
+.TP
+.B docker logs api 2>&1 | lx
+Container logs (merge stderr, since docker splits streams).
+.TP
+.B zcat /var/log/app.log.3.gz | lx
+Rotated, compressed logs.
+.TP
+.B ssh web01 'journalctl \-u nginx \-n 5000' | lx
+Remote logs over ssh.
+.SS Following
+.TP
+.B lx service.log \-F
+Follow a growing log file (like \fBtail \-f\fR).
 .TP
 .B journalctl \-f | lx \-F
-Live\-follow the systemd journal interactively.
+Live\-follow a stream; navigation pauses the auto\-scroll, \fBF\fR
+resumes it.
+.SS Filtering and printing
+.TP
+.B lx access.log \-f 'status >= 500 || (status == 403 && request ~ admin)'
+Boolean logic and numeric comparisons over named fields.
+.TP
+.B lx app.log \-f 'timestamp >= \(dq2026\-07\-13 09:00:00\(dq and level != DBG'
+Wall\-clock timestamp range.
+.TP
+.B lx app.log \-P \-f 'level==ERR' > errors.txt
+Print mode: lx as a structured grep.
+.TP
+.B journalctl \-b | lx \-P \-f 'message ~ oom' | wc \-l
+Count matches from piped input in a pipeline.
+.SS Templates
+.TP
+.B lx \-e serilog > mine.lxt
+Export a built\-in template as editable \fI.lxt\fR text.
+.TP
+.B lx app.log \-g myapp.lxt
+Create a template interactively with the wizard.
+.TP
+.B lx app.log \-d 20
+Allow 20 wrapped lines per field value in the Enter inspector.
 .SH SEE ALSO
 .BR less (1),
 .BR journalctl (1),
