@@ -70,6 +70,10 @@ int template_load_file(Template *t, const char *path, char *err,
                        size_t errsz);
 void template_free(Template *t);
 
+/* Serialize a template back into .lxt text (round-trips through
+ * template_parse_text). Returns 0, or -1 if buf is too small. */
+int template_export(const Template *t, char *buf, size_t bufsz);
+
 /* Index of a named field, or -1. */
 int template_field_index(const Template *t, const char *name,
                          size_t namelen);

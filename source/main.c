@@ -30,6 +30,8 @@ static void usage(FILE *o)
           "              are capped at 500 characters\n"
           "  -P          non-interactive: print the (filtered) lines to\n"
           "              stdout and exit\n"
+          "  -e <name>   export the built-in template <name> as .lxt text\n"
+          "              to stdout, e.g.: lx -e serilog > my.lxt\n"
           "  -l          list built-in templates\n"
           "  -h, --help  show this help\n"
           "  -V, --version  show version\n"
@@ -89,6 +91,22 @@ int main(int argc, char **argv)
                 detail_lines = (int)v;
             } else if (!strcmp(a, "-P")) {
                 print = 1;
+            } else if (!strcmp(a, "-e") && i + 1 < argc) {
+                static char buf[8192];
+                const char *nm = argv[++i];
+                const Template *t = template_builtin(nm);
+                if (!t) {
+                    fprintf(stderr,
+                            "lx: unknown template '%s' (use -l to list "
+                            "them)\n", nm);
+                    return 2;
+                }
+                if (template_export(t, buf, sizeof buf)) {
+                    fprintf(stderr, "lx: template too large to export\n");
+                    return 1;
+                }
+                fputs(buf, stdout);
+                return 0;
             } else if (!strcmp(a, "-l")) {
                 list_templates();
                 return 0;

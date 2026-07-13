@@ -500,6 +500,94 @@ void template_free(Template *t)
 }
 
 /* ------------------------------------------------------------------ */
+/* export                                                              */
+
+static int exp_put(char *buf, size_t bufsz, size_t *off, const char *s)
+{
+    size_t l = strlen(s);
+    if (*off + l >= bufsz)
+        return -1;
+    memcpy(buf + *off, s, l);
+    *off += l;
+    buf[*off] = 0;
+    return 0;
+}
+
+int template_export(const Template *t, char *buf, size_t bufsz)
+{
+    size_t off = 0;
+    char tmp[512];
+    int vi, ti, i;
+
+#define PUT(s) do { if (exp_put(buf, bufsz, &off, (s))) return -1; } while (0)
+    snprintf(tmp, sizeof tmp, "name: %s\n", t->name);
+    PUT(tmp);
+    if (t->desc[0]) {
+        snprintf(tmp, sizeof tmp, "description: %s\n", t->desc);
+        PUT(tmp);
+    }
+    PUT("\n");
+
+    for (vi = 0; vi < t->nvars; vi++) {
+        const TVariant *v = &t->vars[vi];
+        PUT("entry: ");
+        for (ti = 0; ti < v->ntoks; ti++) {
+            const TToken *tk = &v->toks[ti];
+            if (tk->field >= 0) {
+                snprintf(tmp, sizeof tmp, "%%{%s}",
+                         t->fields[tk->field].name);
+                PUT(tmp);
+            } else {
+                int k;
+                for (k = 0; k < tk->litlen; k++) {
+                    if (tk->lit[k] == '%')
+                        PUT("%%");
+                    else {
+                        char c[2] = { tk->lit[k], 0 };
+                        PUT(c);
+                    }
+                }
+            }
+        }
+        PUT("\n");
+    }
+    PUT("\n");
+
+    for (i = 0; i < t->nfields; i++) {
+        const TField *f = &t->fields[i];
+        snprintf(tmp, sizeof tmp, "field %s: type=%s", f->name,
+                 field_type_name(f->type));
+        PUT(tmp);
+        if (f->tsfmt[0]) {
+            snprintf(tmp, sizeof tmp, " format=\"%s\"", f->tsfmt);
+            PUT(tmp);
+        }
+        if (f->nvalues) {
+            int k;
+            PUT(" values=");
+            for (k = 0; k < f->nvalues; k++) {
+                snprintf(tmp, sizeof tmp, "%s%s", k ? "|" : "",
+                         f->values[k]);
+                PUT(tmp);
+            }
+        }
+        if (f->unit[0]) {
+            snprintf(tmp, sizeof tmp, " unit=%s", f->unit);
+            PUT(tmp);
+        }
+        if (f->rgb >= 0) {
+            snprintf(tmp, sizeof tmp, " color=#%06X", f->rgb);
+            PUT(tmp);
+        }
+        if (t->level_field == i)
+            PUT(" severity=yes");
+        PUT("\n");
+    }
+#undef PUT
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* line matching                                                       */
 
 /* Match a literal token; a space in the literal matches one or more

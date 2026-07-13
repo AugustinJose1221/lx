@@ -11,7 +11,8 @@ extension, loaded with `lx file.log -T my.lxt` (or at runtime with
 You don't have to write them by hand: `lx file.log -g my.lxt` starts an
 interactive wizard that splits a sample line, suggests names, types,
 timestamp formats and colours, validates the result against the log,
-and writes the file for you.
+and writes the file for you — and `lx -e serilog > my.lxt` exports any
+built-in template as editable text.
 
 ## Anatomy
 
@@ -152,7 +153,7 @@ field level: type=enum values=INFO|WARN|ERROR    # severity: no color= needed
 ## Built-in templates
 
 Run `lx -l`. The built-ins (`plain`, `syslog`, `syslog-iso`, `dmesg`,
-`serilog`, `python`, `apache`) are written in this same format — their
-definitions in [`source/template.c`](../source/template.c) are good
-starting points for custom templates, as is
-[`examples/myapp.lxt`](examples/myapp.lxt).
+`serilog`, `python`, `macos`, `apache`) are written in this same
+format; `lx -e <name>` prints any of them as ready-to-edit `.lxt` text,
+and [`examples/`](examples/) has a sample log for each one, plus the
+hand-written [`examples/myapp.lxt`](examples/myapp.lxt).

@@ -67,6 +67,11 @@ saying how much was cut.
 Non\-interactive mode: print the (filtered) lines to standard output and
 exit. Useful in pipelines and scripts.
 .TP
+.BI \-e " name"
+Export the built\-in template \fIname\fR as \fI.lxt\fR text to standard
+output and exit \(em a convenient starting point for a custom template:
+.B "lx \-e serilog > mine.lxt"
+.TP
 .B \-l
 List the built\-in templates and exit.
 .TP
@@ -211,6 +216,11 @@ one log entry. Example:
     field module: type=word
     field message: type=string
 .fi
+.PP
+Ready\-made examples for every built\-in template live in
+\fIdocumentation/examples/\fR, and
+.B lx \-e
+exports any built\-in as editable \fI.lxt\fR text.
 .PP
 A template may declare several
 .B entry:

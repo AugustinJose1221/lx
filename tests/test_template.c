@@ -239,6 +239,43 @@ int main(void)
     /* the severity field keeps class-based colouring, not a fixed one */
     OK(t->fields[template_field_index(t, "type", 4)].rgb == -1);
 
+    /* --- export round-trips every built-in ----------------------------- */
+    {
+        static char buf[8192];
+        int bi;
+        for (bi = 0; bi < template_builtin_count(); bi++) {
+            const Template *b = template_builtin_at(bi);
+            Template r;
+            int fi2;
+            OK(template_export(b, buf, sizeof buf) == 0);
+            OK(template_parse_text(&r, buf, err, sizeof err) == 0);
+            OK(r.nvars == b->nvars);
+            OK(r.nfields == b->nfields);
+            OK(r.level_field == b->level_field);
+            for (fi2 = 0; fi2 < b->nfields; fi2++) {
+                OK(!strcmp(r.fields[fi2].name, b->fields[fi2].name));
+                OK(r.fields[fi2].type == b->fields[fi2].type);
+                OK(r.fields[fi2].rgb == b->fields[fi2].rgb);
+                OK(r.fields[fi2].nvalues == b->fields[fi2].nvalues);
+                OK(!strcmp(r.fields[fi2].unit, b->fields[fi2].unit));
+                OK(!strcmp(r.fields[fi2].tsfmt, b->fields[fi2].tsfmt));
+            }
+            template_free(&r);
+        }
+        /* an exported template parses lines exactly like the original */
+        {
+            Template r;
+            OK(template_export(template_builtin("serilog"), buf,
+                               sizeof buf) == 0);
+            OK(template_parse_text(&r, buf, err, sizeof err) == 0);
+            line = "2026-07-12 10:23:45.123 +02:00 [WRN] disk almost full";
+            OK(template_match(&r, line, strlen(line), sp, fn) == 1);
+            OK(span_eq(line, sp[template_field_index(&r, "level", 5)],
+                       "WRN"));
+            template_free(&r);
+        }
+    }
+
     /* --- severity classes -------------------------------------------- */
     OK(severity_class("ERR", 3) == 4);
     OK(severity_class("error", 5) == 4);
