@@ -114,7 +114,7 @@ int main(int argc, char **argv)
                 usage(stdout);
                 return 0;
             } else if (!strcmp(a, "-V") || !strcmp(a, "--version")) {
-                printf("lx %s\n", LX_VERSION);
+                printf("lx %s\nWritten by Augustin Jose.\n", LX_VERSION);
                 return 0;
             } else {
                 fprintf(stderr, "lx: unknown option '%s'\n\n", a);

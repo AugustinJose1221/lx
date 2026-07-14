@@ -146,6 +146,10 @@ tests/               unit tests + sample logs (make test)
 documentation/       man page, template format reference, examples
 ```
 
+## Author
+
+Written by **Augustin Jose**.
+
 ## Documentation
 
 - [documentation/usage.md](documentation/usage.md) — usage guide:

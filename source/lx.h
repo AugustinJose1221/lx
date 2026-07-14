@@ -5,7 +5,7 @@
 
 #include <stddef.h>
 
-#define LX_VERSION "0.1.0"
+#define LX_VERSION "1.0.0"
 
 /* A byte range inside some backing buffer. Offsets are used instead of
  * pointers because the log buffer may be reallocated while following a
