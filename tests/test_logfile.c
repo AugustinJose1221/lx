@@ -11,6 +11,10 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Unit tests for log loading (logfile.c): line splitting, incremental
+ * refresh, truncation reload, continuations, and stdin streams.
+ */
 #include <stdio.h>
 #include <string.h>
 

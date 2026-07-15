@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Log loading and incremental parsing implementation: line splitting,
+ * template matching per entry, appended-data refresh, truncation
+ * reload, and stdin stream ingestion.
+ */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

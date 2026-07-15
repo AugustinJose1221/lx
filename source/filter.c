@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Filter expression compiler (recursive descent) and evaluator over
+ * the named fields of a template; the language is documented in
+ * filter.h.
+ */
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>

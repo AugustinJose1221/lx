@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Self-contained timestamp parsing with strptime-like directives.
+ * Used by templates to parse timestamp fields and by the filter
+ * language to parse timestamp values.
+ */
 #ifndef LX_TSTAMP_H
 #define LX_TSTAMP_H
 

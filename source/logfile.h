@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * A loaded log: a line index over a growable byte buffer with parsed
+ * field spans per entry, plus incremental refresh for growing files,
+ * rotation/truncation, and piped stdin streams.
+ */
 #ifndef LX_LOGFILE_H
 #define LX_LOGFILE_H
 

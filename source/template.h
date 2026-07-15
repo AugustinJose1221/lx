@@ -11,6 +11,12 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Log templates: named, typed fields (string/word/int/float/
+ * timestamp/enum with units, values and colours) plus entry patterns
+ * describing the shape of a log line. Covers the built-ins, .lxt
+ * parsing/export, auto-detection and line matching.
+ */
 #ifndef LX_TEMPLATE_H
 #define LX_TEMPLATE_H
 

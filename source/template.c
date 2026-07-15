@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Template engine implementation: .lxt definition parsing, the
+ * built-in templates, auto-detection, line matching against entry
+ * pattern variants, severity classes, colours, and .lxt export.
+ */
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>

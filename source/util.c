@@ -11,6 +11,7 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/* Implementation of the small shared utilities declared in util.h. */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

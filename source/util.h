@@ -11,6 +11,10 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Small shared utilities: checked allocation, growable buffers,
+ * bounded string copies, case-insensitive substring search, trimming.
+ */
 #ifndef LX_UTIL_H
 #define LX_UTIL_H
 

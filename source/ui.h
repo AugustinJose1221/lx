@@ -11,6 +11,7 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/* Public entry point of the interactive viewer. */
 #ifndef LX_UI_H
 #define LX_UI_H
 

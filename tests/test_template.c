@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Unit tests for the template engine (template.c): .lxt parsing,
+ * matching, entry-pattern variants, colours, severity, auto-detection
+ * and export round-trips.
+ */
 #include <math.h>
 #include <string.h>
 

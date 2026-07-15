@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * lx entry point: command-line parsing and dispatch to the viewer,
+ * print mode (-P), the template wizard (-g), template listing (-l)
+ * and export (-e).
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

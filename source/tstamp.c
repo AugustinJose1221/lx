@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Timestamp parser implementation: format directives, fractional
+ * seconds, UTC offsets/zone names, and civil-date arithmetic with no
+ * dependency on mktime/strptime.
+ */
 #include <ctype.h>
 #include <string.h>
 

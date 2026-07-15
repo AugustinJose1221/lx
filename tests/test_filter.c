@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Unit tests for the filter language (filter.c): operators, boolean
+ * logic, pseudo-fields, semantic timestamp comparison, and compile
+ * errors.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

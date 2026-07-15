@@ -11,6 +11,7 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/* Unit tests for the wizard's line segmentation heuristics (wizard.c). */
 #include <string.h>
 
 #include "test.h"

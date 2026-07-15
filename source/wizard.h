@@ -11,6 +11,11 @@
  * the hope that it will be useful, but WITHOUT ANY WARRANTY. See the
  * LICENSE file in the repository root for the full license text.
  */
+/*
+ * Interactive template-creation wizard (lx -g): prompt-driven .lxt
+ * generation from a sample log line, plus the segmentation heuristics
+ * it is built on (exposed for testing).
+ */
 #ifndef LX_WIZARD_H
 #define LX_WIZARD_H
 
