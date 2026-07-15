@@ -42,16 +42,20 @@ ifeq ($(TARGET_OS),windows)
   PLAT := windows/term_windows.c windows/fswatch_windows.c \
           windows/pipein_windows.c
   DEFS :=
+  LIBS :=
   EXE  := .exe
 else ifeq ($(UNAME_S),Darwin)
   PLAT := posix/term_posix.c posix/pipein_posix.c darwin/fswatch_darwin.c
   DEFS := -D_DARWIN_C_SOURCE
+  LIBS := -lm
 else ifeq ($(UNAME_S),Linux)
   PLAT := posix/term_posix.c posix/pipein_posix.c linux/fswatch_linux.c
   DEFS := -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+  LIBS := -lm
 else
   PLAT := posix/term_posix.c posix/pipein_posix.c posix/fswatch_poll.c
   DEFS := -D_POSIX_C_SOURCE=200809L
+  LIBS := -lm
 endif
 
 BIN := $(BUILD)/lx$(EXE)
@@ -67,7 +71,7 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	@mkdir -p $(BUILD)
-	$(CC) $(LDFLAGS) $(OBJ) -o $@
+	$(CC) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
 
 $(BUILD)/obj/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -78,7 +82,7 @@ $(BUILD)/obj/%.o: %.c
 
 $(BUILD)/tests/%: ../tests/%.c $(LIBOBJ)
 	@mkdir -p $(BUILD)/tests
-	$(CC) $(CSTD) $(WARN) $(OPT) $(DEFS) -I. -I../tests $< $(LIBOBJ) -o $@
+	$(CC) $(CSTD) $(WARN) $(OPT) $(DEFS) -I. -I../tests $< $(LIBOBJ) -o $@ $(LIBS)
 
 test: $(BIN) $(TESTBIN)
 	@set -e; for t in $(TESTBIN); do $$t; done; echo "all tests passed"
