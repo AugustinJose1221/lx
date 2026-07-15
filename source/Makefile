@@ -67,7 +67,7 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	@mkdir -p $(BUILD)
-	$(CC) $(OBJ) -o $@
+	$(CC) $(LDFLAGS) $(OBJ) -o $@
 
 $(BUILD)/obj/%.o: %.c
 	@mkdir -p $(dir $@)

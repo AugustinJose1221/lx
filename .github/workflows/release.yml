@@ -1,0 +1,131 @@
+# This file is part of lx, a terminal log viewer and analyzer.
+# Copyright (C) 2026 Augustin Jose
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Release workflow: on a vX.Y.Z tag, run the test suite and build the
+# executable on Linux, macOS (universal arm64+x86_64) and Windows
+# (MinGW/UCRT64), then publish a GitHub release with the archives as
+# assets.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check tag matches LX_VERSION
+        run: |
+          V=$(sed -n 's/#define LX_VERSION "\(.*\)"/\1/p' source/lx.h)
+          if [ "v$V" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match LX_VERSION $V" >&2
+            exit 1
+          fi
+
+      - name: run tests
+        run: make test
+
+      - name: package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          DIR=lx-$VERSION-linux-x86_64
+          mkdir -p "dist/$DIR"
+          cp build/lx LICENSE README.md documentation/lx.1 \
+             documentation/usage.md "dist/$DIR/"
+          tar -C dist -czf "dist/$DIR.tar.gz" "$DIR"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: run tests
+        run: make test
+
+      - name: build universal binary
+        run: |
+          make clean
+          make OPT="-O2 -arch arm64 -arch x86_64" \
+               LDFLAGS="-arch arm64 -arch x86_64"
+          lipo -info build/lx
+
+      - name: package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          DIR=lx-$VERSION-macos-universal
+          mkdir -p "dist/$DIR"
+          cp build/lx LICENSE README.md documentation/lx.1 \
+             documentation/usage.md "dist/$DIR/"
+          tar -C dist -czf "dist/$DIR.tar.gz" "$DIR"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc make zip
+
+      - name: run tests
+        run: make test
+
+      - name: package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          DIR=lx-$VERSION-windows-x86_64
+          mkdir -p "dist/$DIR"
+          cp build/lx.exe LICENSE README.md documentation/usage.md \
+             "dist/$DIR/"
+          cd dist && zip -r "$DIR.zip" "$DIR"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "lx $GITHUB_REF_NAME" \
+            --generate-notes

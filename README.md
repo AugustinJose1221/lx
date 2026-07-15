@@ -86,6 +86,11 @@ scripts/install.sh              # Linux / macOS (optional arg: PREFIX)
 scripts\install.bat             # Windows: installs to %LOCALAPPDATA%\Programs\lx
 ```
 
+Tagging a release (`git tag v1.2.3 && git push --tags`) triggers a
+GitHub workflow that runs the test suite on Linux, macOS and Windows,
+builds all three executables (macOS as a universal arm64+x86_64
+binary), and publishes them as release assets.
+
 Requires only a C99 compiler and make. Linux and macOS build out of the
 box; other POSIX systems fall back to a generic backend
 (`source/posix/fswatch_poll.c`).
