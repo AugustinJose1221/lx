@@ -29,4 +29,19 @@
 int ts_parse(const char *s, size_t n, const char *fmt, double *out,
              size_t *consumed);
 
+/* Component flags reported by ts_parse2: which parts of the timestamp
+ * were actually present in the parsed input. */
+#define TSF_DATE 1u  /* year/month/day (or day of year) */
+#define TSF_HOUR 2u
+#define TSF_MIN  4u
+#define TSF_SEC  8u
+#define TSF_FRAC 16u
+
+/* Like ts_parse, additionally reporting the parsed components in
+ * *flags (may be NULL). Lets callers implement granularity-aware
+ * comparisons (a date-only value means the whole day) and time-of-day
+ * matching (a time without a date). */
+int ts_parse2(const char *s, size_t n, const char *fmt, double *out,
+              size_t *consumed, unsigned *flags);
+
 #endif

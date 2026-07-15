@@ -17,7 +17,9 @@ static const char *SAMPLE =
     "    retry 1 of 3\n"
     "    retry 2 of 3\n"
     "2026-06-01 19:18:30.002+2.00 UTC [INF]: Connected to db-02\n"
-    "2026-06-01 19:18:31.444+2.00 UTC [FTL]: Shutting down\n";
+    "2026-06-01 19:18:31.444+2.00 UTC [FTL]: Shutting down\n"
+    "2026-06-02 08:05:00.000+2.00 UTC [INF]: Next day, morning\n"
+    "2026-06-02 19:18:26.000+2.00 UTC [INF]: Next day, evening\n";
 
 static size_t count_visible(const LogFile *lf)
 {
@@ -54,18 +56,18 @@ int main(void)
     fclose(fp);
 
     OK(logfile_load(&lf, TMPFILE, template_builtin("serilog")) == 0);
-    OK(lf.nents == 8);
-    OK(lf.nmatched == 6);
+    OK(lf.nents == 10);
+    OK(lf.nmatched == 8);
 
     /* equality and enum values */
     OK(apply(&lf, "level==ERR") == 3);            /* + 2 continuations */
-    OK(apply(&lf, "level == INF") == 2);
+    OK(apply(&lf, "level == INF") == 4);
     OK(apply(&lf, "level != INF") == 6);
     OK(apply(&lf, "level=WRN") == 1);
 
     /* contains (case-insensitive) */
     OK(apply(&lf, "message ~ TIMEOUT") == 3);
-    OK(apply(&lf, "message !~ timeout") == 5);
+    OK(apply(&lf, "message !~ timeout") == 7);
     OK(apply(&lf, "raw ~ retry") == 0); /* continuations inherit parent */
 
     /* boolean logic */
@@ -77,14 +79,32 @@ int main(void)
 
     /* line number pseudo field */
     OK(apply(&lf, "line <= 2") == 2);
-    OK(apply(&lf, "line > 6") == 2);
+    OK(apply(&lf, "line > 6") == 4);
 
     /* timestamp ranges (wall clock, fallback format without fraction) */
-    OK(apply(&lf, "timestamp >= \"2026-06-01 19:18:25\"") == 6);
+    OK(apply(&lf, "timestamp >= \"2026-06-01 19:18:25\"") == 8);
     OK(apply(&lf, "timestamp < '2026-06-01 19:18:24'") == 1);
     OK(apply(&lf,
              "timestamp >= \"2026-06-01 19:18:24\" && "
              "timestamp < \"2026-06-01 19:18:31\"") == 6);
+
+    /* semantic timestamp equality: the value names a granule */
+    OK(apply(&lf, "timestamp == \"2026-06-01\"") == 8);       /* whole day */
+    OK(apply(&lf, "timestamp == \"2026-06-02\"") == 2);
+    OK(apply(&lf, "timestamp != \"2026-06-01\"") == 2);
+    OK(apply(&lf, "timestamp == \"2026-06-01 19:18\"") == 8); /* minute */
+    OK(apply(&lf, "timestamp == \"2026-06-01 19:18:26\"") == 3); /* second */
+    OK(apply(&lf, "timestamp == \"2026-06-01 19:18:23.123\"") == 1); /* exact */
+
+    /* a time without a date compares by time of day, on any date */
+    OK(apply(&lf, "timestamp >= \"19:18:26\"") == 6);
+    OK(apply(&lf, "timestamp < \"09:00\"") == 1);   /* the 08:05 entry */
+    OK(apply(&lf, "timestamp == \"19:18\"") == 9);  /* that minute, any day */
+
+    /* ~ stays textual; ==/order ops never fall back to strings */
+    OK(apply(&lf, "timestamp ~ \"19:18:2\"") == 7);
+    OK(filter_compile("timestamp == junk", lf.tpl, err, sizeof err) ==
+       NULL);
 
     /* compile errors */
     OK(filter_compile("bogusfield == 1", lf.tpl, err, sizeof err) == NULL);
@@ -96,7 +116,7 @@ int main(void)
 
     /* NULL filter shows everything */
     filter_apply(NULL, &lf);
-    OK(count_visible(&lf) == 8);
+    OK(count_visible(&lf) == 10);
 
     logfile_free(&lf);
     remove(TMPFILE);

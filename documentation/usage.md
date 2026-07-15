@@ -92,9 +92,18 @@ lx documentation/examples/apache.log -f 'status >= 400'
 lx documentation/examples/apache.log -f 'status >= 500 || (status == 403 && request ~ admin)'
 lx documentation/examples/dmesg.log -f 'time > 1 && time < 20'
 
-# timestamp ranges (wall-clock, as printed in the file)
+# timestamp ranges (chronological, wall-clock as printed in the file)
 lx documentation/examples/serilog.log -f 'timestamp >= "2026-07-13 09:18:00"'
 lx documentation/examples/python.log -f 'timestamp >= "2026-07-13 09:15:00" and timestamp < "2026-07-13 09:20:00"'
+
+# timestamp equality names a granule: a whole day, minute, or second
+lx documentation/examples/serilog.log -f 'timestamp == "2026-07-13"'        # that day
+lx documentation/examples/serilog.log -f 'timestamp == "2026-07-13 09:15"'  # that minute
+lx documentation/examples/apache.log  -f 'timestamp == "13/Jul/2026:09:16:41 +0200"'
+
+# a time without a date compares by time of day, on any date
+lx documentation/examples/serilog.log -f 'timestamp >= "09:18:00"'
+lx documentation/examples/syslog.log  -f 'timestamp < "09:16"'
 
 # pseudo-fields: raw = the whole unparsed line, line = line number
 lx documentation/examples/macos.log -f 'raw ~ bluetooth'

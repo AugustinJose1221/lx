@@ -68,11 +68,12 @@ static int match_month(const char *s, size_t n, size_t *i, int *mon)
     return -1;
 }
 
-int ts_parse(const char *s, size_t n, const char *fmt, double *out,
-             size_t *consumed)
+int ts_parse2(const char *s, size_t n, const char *fmt, double *out,
+              size_t *consumed, unsigned *flags)
 {
     int Y = 1970, mo = 1, d = 1, H = 0, Mi = 0, Se = 0;
     int pm = -1, yday = -1, v;
+    unsigned fl = 0;
     double frac = 0.0;
     long tz = 0, days;
     size_t i = 0;
@@ -86,27 +87,32 @@ int ts_parse(const char *s, size_t n, const char *fmt, double *out,
                 if (getnum(s, n, &i, 4, 4, &v))
                     return -1;
                 Y = v;
+                fl |= TSF_DATE;
                 break;
             case 'y':
                 if (getnum(s, n, &i, 2, 2, &v))
                     return -1;
                 Y = v < 70 ? 2000 + v : 1900 + v;
+                fl |= TSF_DATE;
                 break;
             case 'm':
                 if (getnum(s, n, &i, 1, 2, &v) || v < 1 || v > 12)
                     return -1;
                 mo = v;
+                fl |= TSF_DATE;
                 break;
             case 'b':
             case 'h':
             case 'B':
                 if (match_month(s, n, &i, &mo))
                     return -1;
+                fl |= TSF_DATE;
                 break;
             case 'd':
                 if (getnum(s, n, &i, 1, 2, &v) || v < 1 || v > 31)
                     return -1;
                 d = v;
+                fl |= TSF_DATE;
                 break;
             case 'e':
                 while (i < n && s[i] == ' ')
@@ -114,26 +120,31 @@ int ts_parse(const char *s, size_t n, const char *fmt, double *out,
                 if (getnum(s, n, &i, 1, 2, &v) || v < 1 || v > 31)
                     return -1;
                 d = v;
+                fl |= TSF_DATE;
                 break;
             case 'H':
                 if (getnum(s, n, &i, 1, 2, &v) || v > 23)
                     return -1;
                 H = v;
+                fl |= TSF_HOUR;
                 break;
             case 'I':
                 if (getnum(s, n, &i, 1, 2, &v) || v < 1 || v > 12)
                     return -1;
                 H = v;
+                fl |= TSF_HOUR;
                 break;
             case 'M':
                 if (getnum(s, n, &i, 1, 2, &v) || v > 59)
                     return -1;
                 Mi = v;
+                fl |= TSF_MIN;
                 break;
             case 'S':
                 if (getnum(s, n, &i, 1, 2, &v) || v > 60)
                     return -1;
                 Se = v;
+                fl |= TSF_SEC;
                 break;
             case 'f': {
                 double sc = 0.1;
@@ -147,12 +158,14 @@ int ts_parse(const char *s, size_t n, const char *fmt, double *out,
                 }
                 if (!w)
                     return -1;
+                fl |= TSF_FRAC;
                 break;
             }
             case 'j':
                 if (getnum(s, n, &i, 1, 3, &v) || v < 1 || v > 366)
                     return -1;
                 yday = v;
+                fl |= TSF_DATE;
                 break;
             case 'p':
                 if (n - i >= 2 && (s[i] == 'A' || s[i] == 'a') &&
@@ -259,5 +272,13 @@ int ts_parse(const char *s, size_t n, const char *fmt, double *out,
     *out = (double)days * 86400.0 + H * 3600 + Mi * 60 + Se + frac;
     if (consumed)
         *consumed = i;
+    if (flags)
+        *flags = fl;
     return 0;
+}
+
+int ts_parse(const char *s, size_t n, const char *fmt, double *out,
+             size_t *consumed)
+{
+    return ts_parse2(s, n, fmt, out, consumed, NULL);
 }

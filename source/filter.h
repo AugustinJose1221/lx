@@ -17,7 +17,13 @@
  * Operators: == != ~ (contains, case-insensitive) !~ > >= < <=
  * Logic:     && || ! (or: and, or, not), parentheses.
  * Values:    barewords, "quoted", 'quoted', numbers, timestamps (parsed
- *            with the field's own format, falling back to ISO forms). */
+ *            with the field's own format, falling back to ISO forms).
+ *
+ * Timestamp values always compare chronologically, never as strings
+ * (an unparseable value is a compile error; only ~ / !~ stay textual):
+ *   timestamp == "2026-07-13"        the whole day
+ *   timestamp == "2026-07-13 09:15"  that minute
+ *   timestamp >= "09:18:00"          by time of day, on any date */
 
 typedef struct FNode FNode;
 

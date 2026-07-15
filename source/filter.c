@@ -24,6 +24,12 @@ struct FNode {
     size_t slen;
     double nval;
     int has_n;
+    /* timestamp comparison semantics */
+    int ts_cmp;  /* nval is a parsed timestamp */
+    int ts_tod;  /* value had a time but no date: compare time of day */
+    double gran; /* equality granularity in seconds: "2026-07-13" means
+                    the whole day (86400), "...09:15" that minute (60);
+                    0 = exact (fractional seconds given) */
 };
 
 typedef struct {
@@ -137,7 +143,10 @@ static int is_order_op(int op)
 static const char *TS_FALLBACKS[] = {
     "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%f",
     "%Y-%m-%d %H:%M:%S",    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%d",             "%H:%M:%S.%f",          "%H:%M:%S",
+    "%Y-%m-%d %H:%M",       "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d",
+    "%b %e %H:%M:%S",       "%b %e %H:%M",
+    "%H:%M:%S.%f",          "%H:%M:%S",          "%H:%M",
 };
 
 static FNode *parse_cmp(P *ps)
@@ -219,22 +228,35 @@ static FNode *parse_cmp(P *ps)
         } else if (ft == FT_TIMESTAMP) {
             double v;
             size_t cons, k;
-            if (!ts_parse(n->sval, n->slen, ps->t->fields[fidx].tsfmt, &v,
-                          &cons) && cons == n->slen) {
+            unsigned fl = 0;
+            if (!ts_parse2(n->sval, n->slen, ps->t->fields[fidx].tsfmt, &v,
+                           &cons, &fl) && cons == n->slen) {
                 n->nval = v;
                 n->has_n = 1;
             } else {
                 for (k = 0;
                      k < sizeof TS_FALLBACKS / sizeof TS_FALLBACKS[0]; k++) {
-                    if (!ts_parse(n->sval, n->slen, TS_FALLBACKS[k], &v,
-                                  &cons) && cons == n->slen) {
+                    fl = 0;
+                    if (!ts_parse2(n->sval, n->slen, TS_FALLBACKS[k], &v,
+                                   &cons, &fl) && cons == n->slen) {
                         n->nval = v;
                         n->has_n = 1;
                         break;
                     }
                 }
             }
-            if (!n->has_n && is_order_op(op)) {
+            if (n->has_n) {
+                n->ts_cmp = 1;
+                /* a time without a date compares by time of day */
+                n->ts_tod = (fl & TSF_HOUR) && !(fl & TSF_DATE);
+                /* equality covers the whole granule the value names */
+                n->gran = (fl & TSF_FRAC) ? 0.0
+                          : (fl & TSF_SEC) ? 1.0
+                          : (fl & TSF_MIN) ? 60.0
+                          : (fl & TSF_HOUR) ? 3600.0
+                                            : 86400.0;
+            } else if (op != OP_CONT && op != OP_NCONT) {
+                /* never fall back to string comparison for timestamps */
                 perr(ps, "cannot parse '%s' as a timestamp", n->sval);
                 filter_free(n);
                 return NULL;
@@ -405,6 +427,28 @@ static int node_eval(const FNode *n, const LogFile *lf, size_t idx)
             if (n->has_n && !isnan(logfile_fnums(lf, idx)[n->field])) {
                 num = logfile_fnums(lf, idx)[n->field];
                 isnum = 1;
+            }
+        }
+
+        /* semantic timestamp comparison: by time of day when the value
+         * carries no date, with equality meaning "within the granule
+         * the value names" (a bare date = that whole day) */
+        if (n->ts_cmp && isnum) {
+            double l = num, r = n->nval;
+            int eq;
+            if (n->ts_tod) {
+                l = fmod(l, 86400.0);
+                r = fmod(r, 86400.0);
+            }
+            eq = n->gran > 0.0 ? (l >= r && l < r + n->gran)
+                               : fabs(l - r) < 1e-9;
+            switch (n->op) {
+            case OP_EQ: return eq;
+            case OP_NE: return !eq;
+            case OP_GT: return l > r;
+            case OP_GE: return l >= r;
+            case OP_LT: return l < r;
+            case OP_LE: return l <= r;
             }
         }
 

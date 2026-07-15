@@ -198,9 +198,22 @@ or the words
 .BR "and or not" ,
 plus parentheses. Values may be barewords, quoted strings or numbers.
 Comparisons use the field's declared type: numbers compare numerically,
-timestamps by wall\-clock time as printed in the file (a value without
-a date, like "19:18:23", also works when the template's timestamp has
-no date component).
+timestamps chronologically by wall\-clock time as printed in the file
+\(em never as strings (a value that cannot be parsed as a timestamp is
+an error; only \fB~\fR/\fB!~\fR match the timestamp text).
+.PP
+Timestamp values are parsed with the template's own format first, then
+common ISO/syslog forms, and understand two conveniences:
+.TP
+.B granularity
+Equality covers the whole period the value names:
+\fBtimestamp == "2026\-07\-13"\fR is that entire day,
+\fB== "2026\-07\-13 09:15"\fR that minute,
+\fB== "2026\-07\-13 09:15:02"\fR that second.
+.TP
+.B time of day
+A value with a time but no date compares by clock time on any date:
+\fBtimestamp >= "09:18:00"\fR, \fBtimestamp == "19:18"\fR.
 .SH TEMPLATE FILES
 A template file (conventionally \fI*.lxt\fR) describes the structure of
 one log entry. Example:
