@@ -150,6 +150,12 @@ documentation/       man page, template format reference, examples
 
 Written by **Augustin Jose**.
 
+## License
+
+Copyright (C) 2026 Augustin Jose. Licensed under the GNU General
+Public License, version 2 or later — see [LICENSE](LICENSE). Every
+source file carries an SPDX `GPL-2.0-or-later` header.
+
 ## Documentation
 
 - [documentation/usage.md](documentation/usage.md) — usage guide:
