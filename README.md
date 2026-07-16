@@ -62,6 +62,10 @@ journalctl -f | lx -F      # live-follow a stream interactively
   on its own. Navigating while following pauses the auto-scroll (press
   `F` to resume). Backed by inotify on Linux, kqueue on macOS, polling
   elsewhere; handles file truncation/rotation.
+- **Huge files** (`-H`): logs in the 1-15 GB range open in seconds -
+  the file is memory-mapped and parsed on demand (8 bytes + 1 bit per
+  line instead of hundreds), with every feature working as usual.
+  Planned to become the default implementation.
 - **Piped input**: `journalctl -b | lx`, `log show --last 1h | lx`,
   `dmesg | lx` — no flag needed (`-` also accepted). The viewer stays
   fully interactive (keyboard from the controlling terminal), live

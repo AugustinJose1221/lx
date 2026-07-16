@@ -40,20 +40,23 @@ endif
 
 ifeq ($(TARGET_OS),windows)
   PLAT := windows/term_windows.c windows/fswatch_windows.c \
-          windows/pipein_windows.c
+          windows/pipein_windows.c windows/filemap_windows.c
   DEFS :=
   LIBS :=
   EXE  := .exe
 else ifeq ($(UNAME_S),Darwin)
-  PLAT := posix/term_posix.c posix/pipein_posix.c darwin/fswatch_darwin.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c posix/filemap_posix.c \
+          darwin/fswatch_darwin.c
   DEFS := -D_DARWIN_C_SOURCE
   LIBS := -lm
 else ifeq ($(UNAME_S),Linux)
-  PLAT := posix/term_posix.c posix/pipein_posix.c linux/fswatch_linux.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c posix/filemap_posix.c \
+          linux/fswatch_linux.c
   DEFS := -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
   LIBS := -lm
 else
-  PLAT := posix/term_posix.c posix/pipein_posix.c posix/fswatch_poll.c
+  PLAT := posix/term_posix.c posix/pipein_posix.c posix/filemap_posix.c \
+          posix/fswatch_poll.c
   DEFS := -D_POSIX_C_SOURCE=200809L
   LIBS := -lm
 endif

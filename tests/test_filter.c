@@ -73,7 +73,7 @@ int main(void)
     fputs(SAMPLE, fp);
     fclose(fp);
 
-    OK(logfile_load(&lf, TMPFILE, template_builtin("serilog")) == 0);
+    OK(logfile_load(&lf, TMPFILE, template_builtin("serilog"), 0) == 0);
     OK(lf.nents == 10);
     OK(lf.nmatched == 8);
 

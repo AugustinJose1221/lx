@@ -408,18 +408,17 @@ static int lexcmp(const char *a, size_t al, const char *b, size_t bl)
     return al < bl ? -1 : al > bl ? 1 : 0;
 }
 
-static int node_eval(const FNode *n, const LogFile *lf, size_t idx)
+static int node_eval(const FNode *n, LogFile *lf, const EView *e)
 {
-    const Entry *e = &lf->ents[idx];
-    const char *line = lf->buf + e->raw.off;
+    const char *line = logfile_data(lf) + e->raw.off;
 
     switch (n->kind) {
     case NK_AND:
-        return node_eval(n->l, lf, idx) && node_eval(n->r, lf, idx);
+        return node_eval(n->l, lf, e) && node_eval(n->r, lf, e);
     case NK_OR:
-        return node_eval(n->l, lf, idx) || node_eval(n->r, lf, idx);
+        return node_eval(n->l, lf, e) || node_eval(n->r, lf, e);
     case NK_NOT:
-        return !node_eval(n->l, lf, idx);
+        return !node_eval(n->l, lf, e);
     }
 
     /* NK_CMP */
@@ -439,11 +438,11 @@ static int node_eval(const FNode *n, const LogFile *lf, size_t idx)
             const Span *sp;
             if (!e->matched)
                 return 0;
-            sp = &logfile_fspans(lf, idx)[n->field];
+            sp = &e->fsp[n->field];
             txt = line + sp->off;
             tl = sp->len;
-            if (n->has_n && !isnan(logfile_fnums(lf, idx)[n->field])) {
-                num = logfile_fnums(lf, idx)[n->field];
+            if (n->has_n && !isnan(e->fnum[n->field])) {
+                num = e->fnum[n->field];
                 isnum = 1;
             }
         }
@@ -500,30 +499,49 @@ static int node_eval(const FNode *n, const LogFile *lf, size_t idx)
     return 0;
 }
 
-int filter_eval_entry(const FNode *n, const LogFile *lf, size_t idx)
+int filter_eval_entry(const FNode *n, LogFile *lf, size_t idx)
 {
+    EView v;
     if (!n)
         return 1;
-    return node_eval(n, lf, idx);
+    logfile_view(lf, idx, &v);
+    return node_eval(n, lf, &v);
+}
+
+void filter_apply_from(const FNode *n, LogFile *lf, size_t from)
+{
+    size_t i;
+    int prev;
+
+    /* remove the old contribution of the entries being re-evaluated */
+    if (from == 0) {
+        lf->nvisible = 0;
+    } else {
+        for (i = from; i < lf->nents; i++)
+            if (logfile_is_visible(lf, i))
+                lf->nvisible--;
+    }
+    prev = from ? logfile_is_visible(lf, from - 1) : 1;
+
+    for (i = from; i < lf->nents; i++) {
+        int vis;
+        if (!n) {
+            vis = 1; /* no filter: skip parsing entirely */
+        } else {
+            EView e;
+            logfile_view(lf, i, &e);
+            if (e.cont)
+                vis = prev; /* continuation lines follow their parent */
+            else
+                vis = node_eval(n, lf, &e);
+        }
+        logfile_set_visible(lf, i, vis);
+        prev = vis;
+        lf->nvisible += (size_t)vis;
+    }
 }
 
 void filter_apply(const FNode *n, LogFile *lf)
 {
-    size_t i;
-    int prev = 1;
-
-    lf->nvisible = 0;
-    for (i = 0; i < lf->nents; i++) {
-        Entry *e = &lf->ents[i];
-        int v;
-        if (!n)
-            v = 1;
-        else if (e->cont)
-            v = prev; /* continuation lines follow their parent */
-        else
-            v = node_eval(n, lf, i);
-        e->visible = (unsigned char)v;
-        prev = v;
-        lf->nvisible += (size_t)v;
-    }
+    filter_apply_from(n, lf, 0);
 }

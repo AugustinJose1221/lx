@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "filter.h"
 #include "logfile.h"
 #include "template.h"
 #include "test.h"
@@ -39,7 +40,7 @@ static void test_stream(void)
     OK(dup2(fds[0], 0) == 0);
 
     OK(write(fds[1], "[    1.0] one\n[    2.0] two\n", 28) == 28);
-    OK(logfile_load(&lf, "-", template_builtin("dmesg")) == 0);
+    OK(logfile_load(&lf, "-", template_builtin("dmesg"), 0) == 0);
     OK(lf.stream == 1);
     OK(lf.stream_eof == 0);
     OK(lf.nents == 2);
@@ -78,6 +79,97 @@ static void test_stream(void)
 }
 #endif /* !_WIN32 */
 
+/* High-performance backend: everything observable through the accessor
+ * API must match the standard backend on the same file. */
+static void test_hp(void)
+{
+    LogFile a, b; /* a = standard, b = hp */
+    FILE *fp;
+    size_t i;
+    char err[256];
+    FNode *fn;
+
+    fp = fopen(TMPFILE, "wb");
+    fputs("2026-06-01 19:18:23.123+2.00 UTC [INF]: started\n"
+          "2026-06-01 19:18:24.000+2.00 UTC [ERR]: failed: timeout\n"
+          "    retry 1 of 3\n"
+          "2026-06-01 19:18:25.000+2.00 UTC [WRN]: disk at 85%\r\n"
+          "2026-06-01 19:18:26.000+2.00 UTC [INF]: tail no newline", fp);
+    fclose(fp);
+
+    OK(logfile_load(&a, TMPFILE, template_builtin("serilog"), 0) == 0);
+    OK(logfile_load(&b, TMPFILE, template_builtin("serilog"), 1) == 0);
+    OK(b.hp == 1);
+    OK(a.nents == b.nents);
+    OK(b.nents == 5);
+    OK(b.unterminated == 1);
+
+    /* per-entry equivalence via the accessor API */
+    for (i = 0; i < a.nents; i++) {
+        EView va, vb;
+        Span ra = logfile_raw(&a, i), rb = logfile_raw(&b, i);
+        OK(ra.len == rb.len);
+        OK(!memcmp(logfile_data(&a) + ra.off, logfile_data(&b) + rb.off,
+                   ra.len));
+        logfile_view(&a, i, &va);
+        logfile_view(&b, i, &vb);
+        OK(va.matched == vb.matched);
+        OK(va.cont == vb.cont);
+        OK(va.lineno == vb.lineno);
+        if (va.matched) {
+            int f;
+            for (f = 0; f < a.tpl->nfields; f++) {
+                OK(va.fsp[f].off == vb.fsp[f].off);
+                OK(va.fsp[f].len == vb.fsp[f].len);
+            }
+        }
+    }
+
+    /* filters agree */
+    fn = filter_compile("level==ERR", a.tpl, err, sizeof err);
+    OK(fn != NULL);
+    filter_apply(fn, &a);
+    filter_apply(fn, &b);
+    OK(a.nvisible == b.nvisible);
+    OK(b.nvisible == 2); /* the ERR entry + its continuation line */
+    for (i = 0; i < a.nents; i++)
+        OK(logfile_is_visible(&a, i) == logfile_is_visible(&b, i));
+    filter_free(fn);
+
+    /* append: the unterminated tail is re-evaluated, new lines indexed */
+    fp = fopen(TMPFILE, "ab");
+    fputs(" now terminated\n"
+          "2026-06-01 19:18:27.000+2.00 UTC [FTL]: last\n", fp);
+    fclose(fp);
+    OK(logfile_refresh(&b) == 1);
+    OK(b.nents == 6);
+    OK(b.refresh_from == 4); /* the tail line */
+    OK(b.unterminated == 0);
+    {
+        Span r = logfile_raw(&b, 4);
+        OK(r.len == strlen("2026-06-01 19:18:26.000+2.00 UTC [INF]: "
+                           "tail no newline now terminated"));
+    }
+    OK(logfile_refresh(&b) == 0);
+
+    /* truncation reloads */
+    fp = fopen(TMPFILE, "wb");
+    fputs("2026-06-01 19:18:30.000+2.00 UTC [INF]: fresh\n", fp);
+    fclose(fp);
+    OK(logfile_refresh(&b) == 1);
+    OK(b.nents == 1);
+    OK(b.hp == 1);
+    OK(b.refresh_from == 0);
+
+    /* reparse (template switch) resets visibility */
+    OK(logfile_reparse(&b, template_builtin("plain")) == 0);
+    OK(b.nvisible == b.nents);
+
+    logfile_free(&a);
+    logfile_free(&b);
+    remove(TMPFILE);
+}
+
 int main(void)
 {
     LogFile lf;
@@ -89,7 +181,7 @@ int main(void)
     fputs("[    1.0] one\r\n[    2.0] two\n[    3.0] thr", fp);
     fclose(fp);
 
-    OK(logfile_load(&lf, TMPFILE, template_builtin("dmesg")) == 0);
+    OK(logfile_load(&lf, TMPFILE, template_builtin("dmesg"), 0) == 0);
     OK(lf.nents == 3);
     OK(lf.nmatched == 3);
     OK(lf.unterminated == 1);
@@ -127,7 +219,7 @@ int main(void)
           fp);
     fclose(fp);
     logfile_free(&lf);
-    OK(logfile_load(&lf, TMPFILE, template_builtin("dmesg")) == 0);
+    OK(logfile_load(&lf, TMPFILE, template_builtin("dmesg"), 0) == 0);
     OK(lf.nents == 3);
     OK(lf.ents[0].matched == 1 && lf.ents[0].cont == 0);
     OK(lf.ents[1].matched == 0 && lf.ents[1].cont == 1);
@@ -141,12 +233,14 @@ int main(void)
     fp = fopen(TMPFILE, "wb");
     fclose(fp);
     logfile_free(&lf);
-    OK(logfile_load(&lf, TMPFILE, NULL) == 0);
+    OK(logfile_load(&lf, TMPFILE, NULL, 0) == 0);
     OK(lf.nents == 0);
     OK(lf.tpl != NULL); /* autodetect falls back to plain */
 
     logfile_free(&lf);
     remove(TMPFILE);
+
+    test_hp();
 
 #ifndef _WIN32
     test_stream();

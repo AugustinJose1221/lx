@@ -491,6 +491,10 @@ static char *read_file(const char *path, size_t *lenout)
     buf = xmalloc(cap);
     while ((n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
         len += n;
+        /* the wizard only samples the first lines; reading a few MB is
+         * plenty and keeps -g instant on multi-gigabyte files */
+        if (len >= (size_t)4 << 20)
+            break;
         if (cap - len < 2) {
             cap *= 2;
             buf = xrealloc(buf, cap);

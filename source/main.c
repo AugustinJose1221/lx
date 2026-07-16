@@ -43,6 +43,9 @@ static void usage(FILE *o)
           "  -f <expr>   apply a filter expression at startup,\n"
           "              e.g. -f 'level==ERR && message ~ timeout'\n"
           "  -F          start in follow mode (like tail -f)\n"
+          "  -H          high-performance mode for huge logs (1-15 GB):\n"
+          "              the file is memory-mapped and parsed on demand\n"
+          "              instead of being loaded and parsed up front\n"
           "  -d <n>      in the entry inspector (Enter), show up to <n>\n"
           "              wrapped lines per field value; without -d, values\n"
           "              are capped at 500 characters\n"
@@ -77,7 +80,7 @@ int main(int argc, char **argv)
 {
     const char *file = NULL, *tname = NULL, *tfile = NULL, *fexpr = NULL;
     const char *genfile = NULL;
-    int follow = 0, print = 0, detail_lines = 0, i, rc;
+    int follow = 0, print = 0, detail_lines = 0, hp = 0, i, rc;
     static Template custom;
     const Template *tpl = NULL;
     static LogFile lf;
@@ -97,6 +100,8 @@ int main(int argc, char **argv)
                 fexpr = argv[++i];
             } else if (!strcmp(a, "-F")) {
                 follow = 1;
+            } else if (!strcmp(a, "-H")) {
+                hp = 1;
             } else if (!strcmp(a, "-d") && i + 1 < argc) {
                 char *end;
                 long v = strtol(argv[++i], &end, 10);
@@ -170,6 +175,12 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    if (hp && !strcmp(file, "-")) {
+        fprintf(stderr, "lx: -H needs a file to map; reading the pipe "
+                        "in standard mode\n");
+        hp = 0;
+    }
+
     if (genfile) {
         int wrc = wizard_run(file, genfile);
         if (wrc < 0)
@@ -195,7 +206,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (logfile_load(&lf, file, tpl)) {
+    if (logfile_load(&lf, file, tpl, hp)) {
         fprintf(stderr, "lx: cannot read '%s'\n", file);
         return 1;
     }
@@ -220,9 +231,9 @@ int main(int argc, char **argv)
     if (print) {
         size_t k;
         for (k = 0; k < lf.nents; k++) {
-            if (lf.ents[k].visible) {
-                fwrite(lf.buf + lf.ents[k].raw.off, 1, lf.ents[k].raw.len,
-                       stdout);
+            if (logfile_is_visible(&lf, k)) {
+                Span r = logfile_raw(&lf, k);
+                fwrite(logfile_data(&lf) + r.off, 1, r.len, stdout);
                 fputc('\n', stdout);
             }
         }

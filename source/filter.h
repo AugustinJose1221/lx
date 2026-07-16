@@ -45,10 +45,14 @@ FNode *filter_compile(const char *expr, const Template *t, char *err,
 void filter_free(FNode *n);
 
 /* Evaluate against entry idx of lf (visibility flags are not consulted). */
-int filter_eval_entry(const FNode *n, const LogFile *lf, size_t idx);
+int filter_eval_entry(const FNode *n, LogFile *lf, size_t idx);
 
 /* Set the visible flag on every entry. A NULL filter shows everything.
  * Continuation lines inherit the visibility of their parent entry. */
 void filter_apply(const FNode *n, LogFile *lf);
+
+/* Re-evaluate only entries from `from` onward (used after a refresh
+ * appended new lines, so a follow tick does not rescan the whole log). */
+void filter_apply_from(const FNode *n, LogFile *lf, size_t from);
 
 #endif

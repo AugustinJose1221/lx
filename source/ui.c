@@ -34,7 +34,9 @@
 
 typedef struct {
     LogFile *lf;
-    size_t *vis; /* indices of visible entries */
+    size_t *vis; /* indices of visible entries; NULL = identity (no
+                    filter active), so huge unfiltered logs never
+                    materialize an index array */
     size_t nvis;
     size_t viscap;
     size_t cur;  /* cursor, index into vis[] */
@@ -58,16 +60,32 @@ typedef struct {
 static void rebuild(UI *ui)
 {
     size_t i;
-    ui->vis = xgrow(ui->vis, &ui->viscap,
-                    ui->lf->nents ? ui->lf->nents : 1, sizeof *ui->vis);
-    ui->nvis = 0;
-    for (i = 0; i < ui->lf->nents; i++)
-        if (ui->lf->ents[i].visible)
-            ui->vis[ui->nvis++] = i;
+
+    if (!ui->filter) {
+        /* everything is visible: view index == entry index */
+        free(ui->vis);
+        ui->vis = NULL;
+        ui->viscap = 0;
+        ui->nvis = ui->lf->nents;
+    } else {
+        ui->vis = xgrow(ui->vis, &ui->viscap,
+                        ui->lf->nvisible ? ui->lf->nvisible : 1,
+                        sizeof *ui->vis);
+        ui->nvis = 0;
+        for (i = 0; i < ui->lf->nents; i++)
+            if (logfile_is_visible(ui->lf, i))
+                ui->vis[ui->nvis++] = i;
+    }
     if (ui->nvis == 0)
         ui->cur = ui->top = 0;
     else if (ui->cur >= ui->nvis)
         ui->cur = ui->nvis - 1;
+}
+
+/* Entry index of the vi-th visible row. */
+static size_t vent(const UI *ui, size_t vi)
+{
+    return ui->vis ? ui->vis[vi] : vi;
 }
 
 static int content_rows(void)
@@ -107,12 +125,12 @@ static void clamp_view(UI *ui)
  * whole; otherwise each field uses its template colour and the severity
  * field is coloured by its class. */
 static void cell_sgr(char *out, size_t outsz, const Template *t,
-                     const Entry *e, int sev, int cl, int rev)
+                     int matched, int cont, int sev, int cl, int rev)
 {
     char col[24] = "";
 
-    if (!e->matched) {
-        if (e->cont)
+    if (!matched) {
+        if (cont)
             strcpy(col, ";2");
     } else if (sev >= 5) {
         strcpy(col, ";1;31");
@@ -139,16 +157,21 @@ static void draw_entry(UI *ui, size_t ei, int iscur, int cols)
     static char ex[16384];
     static unsigned char cls[16384]; /* per-cell field class */
     static unsigned char mat[16384]; /* per-cell search-match flag */
-    const LogFile *lf = ui->lf;
+    LogFile *lf = ui->lf;
     const Template *t = lf->tpl;
-    const Entry *e = &lf->ents[ei];
-    const char *s = lf->buf + e->raw.off;
-    const Span *fsp = e->matched ? logfile_fspans(lf, ei) : NULL;
-    size_t n = e->raw.len, i, k, xl = 0;
+    EView ev;
+    const char *s;
+    const Span *fsp;
+    size_t n, i, k, xl = 0;
     size_t need = (size_t)ui->hscroll + (size_t)cols;
     size_t wstart, wlen, slen;
     int sev = -1;
     char cur[32] = "", want[32];
+
+    logfile_view(lf, ei, &ev);
+    s = logfile_data(lf) + ev.raw.off;
+    n = ev.raw.len;
+    fsp = ev.matched ? ev.fsp : NULL;
 
     if (need > sizeof ex - 1)
         need = sizeof ex - 1;
@@ -213,7 +236,8 @@ static void draw_entry(UI *ui, size_t ei, int iscur, int cols)
     for (k = 0; k < wlen; k++) {
         size_t g = wstart + k;
         int rev = mat[g] ? !iscur : iscur;
-        cell_sgr(want, sizeof want, t, e, sev, cls[g], rev);
+        cell_sgr(want, sizeof want, t, ev.matched, ev.cont, sev,
+                 cls[g], rev);
         if (strcmp(want, cur)) {
             term_writes(want);
             strcpy(cur, want);
@@ -242,7 +266,7 @@ static void draw(UI *ui)
         int n = snprintf(buf, sizeof buf, "\x1b[%d;1H\x1b[0m\x1b[K", r + 1);
         term_write(buf, (size_t)n);
         if (vi < ui->nvis)
-            draw_entry(ui, ui->vis[vi], vi == ui->cur, C);
+            draw_entry(ui, vent(ui, vi), vi == ui->cur, C);
         else
             term_writes("\x1b[90m~\x1b[0m");
     }
@@ -267,14 +291,19 @@ static void draw(UI *ui)
     if (ui->nvis) {
         off += snprintf(buf + off, sizeof buf - (size_t)off,
                         "  line %zu  %zu/%zu (%zu%%)",
-                        ui->lf->ents[ui->vis[ui->cur]].lineno, ui->cur + 1,
+                        vent(ui, ui->cur) + 1, ui->cur + 1,
                         ui->nvis, (ui->cur + 1) * 100 / ui->nvis);
     } else {
         off += snprintf(buf + off, sizeof buf - (size_t)off, "  0/0");
     }
     CLAMP_OFF();
-    off += snprintf(buf + off, sizeof buf - (size_t)off,
-                    "  parsed %zu/%zu", ui->lf->nmatched, ui->lf->nents);
+    if (ui->lf->hp)
+        off += snprintf(buf + off, sizeof buf - (size_t)off, "  HP  %zu",
+                        ui->lf->nents);
+    else
+        off += snprintf(buf + off, sizeof buf - (size_t)off,
+                        "  parsed %zu/%zu", ui->lf->nmatched,
+                        ui->lf->nents);
     CLAMP_OFF();
     if (ui->filter)
         off += snprintf(buf + off, sizeof buf - (size_t)off,
@@ -452,9 +481,9 @@ static void add_wrapped(char ***lines, size_t *n, size_t *cap,
 
 static void show_detail(UI *ui)
 {
-    const LogFile *lf = ui->lf;
+    LogFile *lf = ui->lf;
     const Template *t = lf->tpl;
-    const Entry *e;
+    EView ev;
     char **lines = NULL;
     size_t ei, k, nl = 0, lcap = 0, maxchars;
     int i, R, C, w;
@@ -471,21 +500,21 @@ static void show_detail(UI *ui)
                    ? (size_t)ui->detail_lines * (size_t)(w - 2)
                    : (size_t)DETAIL_DEFAULT_CHARS;
 
-    ei = ui->vis[ui->cur];
-    e = &lf->ents[ei];
+    ei = vent(ui, ui->cur);
+    logfile_view(lf, ei, &ev);
 
-    add_linef(&lines, &nl, &lcap, "line %zu  -  %s  [%s]", e->lineno,
-              e->matched ? "matched"
-                         : (e->cont ? "continuation of previous entry"
+    add_linef(&lines, &nl, &lcap, "line %zu  -  %s  [%s]", ev.lineno,
+              ev.matched ? "matched"
+                         : (ev.cont ? "continuation of previous entry"
                                     : "did not match template"),
               t->name);
     add_linef(&lines, &nl, &lcap, "%s", "");
 
-    if (e->matched) {
-        const Span *fsp = logfile_fspans(lf, ei);
+    if (ev.matched) {
+        const Span *fsp = ev.fsp;
         for (i = 0; i < t->nfields; i++) {
             const TField *f = &t->fields[i];
-            const char *v = lf->buf + e->raw.off + fsp[i].off;
+            const char *v = logfile_data(lf) + ev.raw.off + fsp[i].off;
             size_t vl = fsp[i].len;
             char pfx[80];
 
@@ -512,8 +541,8 @@ static void show_detail(UI *ui)
         }
     } else {
         add_linef(&lines, &nl, &lcap, "raw =");
-        add_wrapped(&lines, &nl, &lcap, lf->buf + e->raw.off, e->raw.len,
-                    maxchars, w);
+        add_wrapped(&lines, &nl, &lcap, logfile_data(lf) + ev.raw.off,
+                    ev.raw.len, maxchars, w);
     }
 
     overlay((const char **)lines, (int)nl);
@@ -610,8 +639,16 @@ static void clear_filter(UI *ui)
 static void goto_line(UI *ui, size_t lineno)
 {
     size_t i;
+
+    if (!ui->vis) { /* identity: line N is row N-1 */
+        if (ui->nvis)
+            ui->cur = lineno ? (lineno - 1 < ui->nvis ? lineno - 1
+                                                      : ui->nvis - 1)
+                             : 0;
+        return;
+    }
     for (i = 0; i < ui->nvis; i++) {
-        if (ui->lf->ents[ui->vis[i]].lineno >= lineno) {
+        if (ui->vis[i] + 1 >= lineno) {
             ui->cur = i;
             return;
         }
@@ -715,8 +752,8 @@ static void exec_command(UI *ui, char *cmd)
 
 static int entry_contains(UI *ui, size_t ei)
 {
-    const Entry *e = &ui->lf->ents[ei];
-    return find_sub(ui->lf->buf + e->raw.off, e->raw.len, ui->search,
+    Span r = logfile_raw(ui->lf, ei);
+    return find_sub(logfile_data(ui->lf) + r.off, r.len, ui->search,
                     strlen(ui->search), 1) >= 0;
 }
 
@@ -732,7 +769,7 @@ static void search_move(UI *ui, int dir, int inclusive)
     start = (long)ui->cur + (inclusive ? 0 : dir);
     for (k = 0; k < n; k++) {
         long idx = ((start + dir * k) % n + n) % n;
-        if (entry_contains(ui, ui->vis[idx])) {
+        if (entry_contains(ui, vent(ui, (size_t)idx))) {
             if ((dir > 0 && idx < (long)ui->cur) ||
                 (dir < 0 && idx > (long)ui->cur))
                 set_msg(ui, "search wrapped");
@@ -769,7 +806,9 @@ static void do_refresh(UI *ui)
 {
     int rc = logfile_refresh(ui->lf);
     if (rc > 0) {
-        filter_apply(ui->filter, ui->lf);
+        /* only the entries touched by the refresh are re-filtered, so
+         * following a growing multi-gigabyte log stays cheap */
+        filter_apply_from(ui->filter, ui->lf, ui->lf->refresh_from);
         rebuild(ui);
         if (ui->follow && ui->nvis)
             ui->cur = ui->nvis - 1;

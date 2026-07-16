@@ -140,6 +140,31 @@ grep), so don't combine it with never-ending producers such as
 Exit codes for scripting: `0` success, `1` I/O error, `2` usage error
 (unknown option/template, invalid filter).
 
+## Huge files (`-H`)
+
+High-performance mode for logs in the gigabyte range (1-15 GB):
+
+```sh
+lx /var/log/huge-app.log -H
+lx huge.log -H -f 'level==ERR'         # filter still works (full scan)
+lx huge.log -H -P -f 'status >= 500'   # structured grep over gigabytes
+lx huge.log -H -F                      # follow a huge growing file
+```
+
+Instead of loading and parsing the whole file up front, `-H`
+memory-maps it and parses lines on demand: only 8 bytes + 1 bit of
+memory are kept per line, opening a 6 GiB log takes seconds (one
+sequential newline scan), and jumping to the last of tens of millions
+of entries is instant. Applying a filter scans the file once, like
+grep. Everything works as in standard mode: navigation, search,
+filters, the inspector, colours, `:template`, follow mode.
+
+Two visible differences: the status bar shows `HP` and the total entry
+count instead of the parsed-lines counter (counting parses would
+defeat the lazy design), and `-H` is ignored for piped input (a pipe
+has no file to map). High-performance mode is planned to become the
+default implementation.
+
 ## The entry inspector (`Enter`, `-d`)
 
 `Enter` on any entry shows each parsed field with its type, unit and

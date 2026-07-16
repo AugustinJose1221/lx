@@ -12,9 +12,12 @@
  * LICENSE file in the repository root for the full license text.
  */
 /*
- * Log loading and incremental parsing implementation: line splitting,
- * template matching per entry, appended-data refresh, truncation
- * reload, and stdin stream ingestion.
+ * Log loading and incremental parsing implementation. Two backends
+ * (see logfile.h): the standard heap-and-parse-everything path, and
+ * the high-performance mmap + lazy-parse path (-H) that keeps only
+ * 8 bytes + 1 bit per line and is intended to become the native
+ * implementation. All consumers go through the accessor functions at
+ * the bottom so the backends stay interchangeable.
  */
 #include <math.h>
 #include <stdio.h>
@@ -26,6 +29,12 @@
 #include "util.h"
 
 #define STREAM_CHUNK 65536
+#define AUTODETECT_WINDOW 65536
+
+const char *logfile_data(const LogFile *lf)
+{
+    return lf->hp ? lf->map.data : lf->buf;
+}
 
 const Span *logfile_fspans(const LogFile *lf, size_t idx)
 {
@@ -36,6 +45,25 @@ const double *logfile_fnums(const LogFile *lf, size_t idx)
 {
     return lf->fnums + idx * (size_t)lf->tpl->nfields;
 }
+
+/* ------------------------------------------------------------------ */
+/* visibility bits (hp backend)                                        */
+
+static int bit_get(const unsigned char *b, size_t i)
+{
+    return (b[i >> 3] >> (i & 7)) & 1;
+}
+
+static void bit_set(unsigned char *b, size_t i, int v)
+{
+    if (v)
+        b[i >> 3] |= (unsigned char)(1u << (i & 7));
+    else
+        b[i >> 3] &= (unsigned char)~(1u << (i & 7));
+}
+
+/* ------------------------------------------------------------------ */
+/* standard backend: heap buffer + fully parsed entries                */
 
 static void append_entry(LogFile *lf, size_t off, size_t len)
 {
@@ -68,6 +96,7 @@ static void append_entry(LogFile *lf, size_t off, size_t len)
     if (e->matched)
         lf->nmatched++;
     lf->nents++;
+    lf->nvisible++;
 }
 
 static void parse_from(LogFile *lf, size_t start)
@@ -97,6 +126,8 @@ static void parse_appended(LogFile *lf)
         lf->nents--;
         if (lf->ents[lf->nents].matched)
             lf->nmatched--;
+        if (lf->ents[lf->nents].visible)
+            lf->nvisible--;
         start = lf->ents[lf->nents].raw.off;
         lf->unterminated = 0;
     } else if (lf->nents) {
@@ -106,6 +137,7 @@ static void parse_appended(LogFile *lf)
     } else {
         start = 0;
     }
+    lf->refresh_from = lf->nents;
     parse_from(lf, start);
 }
 
@@ -156,15 +188,119 @@ static int read_whole(LogFile *lf, FILE *fp)
     return ferror(fp) ? -1 : 0;
 }
 
-int logfile_load(LogFile *lf, const char *path, const Template *tpl)
+/* ------------------------------------------------------------------ */
+/* hp backend: mmap + line-offset index + lazy parsing                 */
+
+static void hp_push_line(LogFile *lf, size_t off)
+{
+    lf->lineoff = xgrow(lf->lineoff, &lf->linecap, lf->nents + 1,
+                        sizeof *lf->lineoff);
+    if ((lf->nents >> 3) + 1 > lf->visbytes) {
+        size_t oldb = lf->visbytes;
+        lf->visbits = xgrow(lf->visbits, &lf->visbytes,
+                            (lf->nents >> 3) + 4096, 1);
+        memset(lf->visbits + oldb, 0, lf->visbytes - oldb);
+    }
+    lf->lineoff[lf->nents] = off;
+    bit_set(lf->visbits, lf->nents, 1);
+    lf->nents++;
+    lf->nvisible++;
+}
+
+/* Index line starts by scanning for newlines from scan_from onward.
+ * A start is recorded only when at least one byte follows the newline,
+ * so a trailing newline does not create an empty phantom line. */
+static void hp_index(LogFile *lf, size_t scan_from)
+{
+    const char *d = lf->map.data;
+    size_t len = lf->map.len, p = scan_from;
+
+    if (lf->nents == 0 && len)
+        hp_push_line(lf, 0);
+    while (p < len) {
+        const char *nl = memchr(d + p, '\n', len - p);
+        size_t q;
+        if (!nl)
+            break;
+        q = (size_t)(nl - d) + 1;
+        if (q < len)
+            hp_push_line(lf, q);
+        p = q;
+    }
+    lf->unterminated = len ? d[len - 1] != '\n' : 0;
+}
+
+static int hp_load(LogFile *lf, const char *path, const Template *tpl)
+{
+    lf->hp = 1;
+    lf->hp_vidx = (size_t)-1;
+    lf->path = xstrdup(path);
+    if (filemap_open(&lf->map, path))
+        return -1;
+    hp_index(lf, 0);
+    lf->tpl = tpl ? tpl
+                  : template_autodetect(lf->map.data ? lf->map.data : "",
+                                        lf->map.len < AUTODETECT_WINDOW
+                                            ? lf->map.len
+                                            : AUTODETECT_WINDOW);
+    /* nmatched stays 0: counting it would require parsing every line,
+     * which is exactly what hp mode avoids */
+    return 0;
+}
+
+static int hp_refresh(LogFile *lf)
+{
+    long long sz = filemap_size(lf->path);
+    size_t old;
+
+    if (sz < 0)
+        return 0;
+    if ((size_t)sz < lf->map.len) {
+        /* truncated / rotated: reload from scratch */
+        const Template *tpl = lf->tpl;
+        char *path = lf->path;
+        lf->path = NULL;
+        filemap_close(&lf->map);
+        free(lf->lineoff);
+        free(lf->visbits);
+        memset(lf, 0, sizeof *lf);
+        if (hp_load(lf, path, tpl)) {
+            free(path);
+            return -1;
+        }
+        free(path);
+        lf->refresh_from = 0;
+        return 1;
+    }
+    if ((size_t)sz == lf->map.len)
+        return 0;
+
+    old = lf->map.len;
+    if (filemap_remap(&lf->map, lf->path))
+        return -1;
+    /* the previously unterminated tail line keeps its start but its
+     * content changed: re-filter it along with the new lines */
+    lf->refresh_from =
+        (lf->unterminated && lf->nents) ? lf->nents - 1 : lf->nents;
+    hp_index(lf, old ? old - 1 : 0);
+    lf->hp_vidx = (size_t)-1;
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* public API                                                          */
+
+int logfile_load(LogFile *lf, const char *path, const Template *tpl,
+                 int hp)
 {
     FILE *fp;
 
     memset(lf, 0, sizeof *lf);
 
     if (!strcmp(path, "-")) {
-        /* piped standard input: consume the initial burst, then let
-         * logfile_refresh() stream the rest */
+        /* piped standard input (hp is ignored: there is no file to
+         * map): consume the initial burst, then let logfile_refresh()
+         * stream the rest */
         lf->stream = 1;
         lf->path = xstrdup("(stdin)");
         if (pipein_start())
@@ -193,6 +329,8 @@ int logfile_load(LogFile *lf, const char *path, const Template *tpl)
                 break;
         }
         lf->buf[lf->len] = 0;
+    } else if (hp) {
+        return hp_load(lf, path, tpl);
     } else {
         fp = fopen(path, "rb");
         if (!fp)
@@ -207,7 +345,6 @@ int logfile_load(LogFile *lf, const char *path, const Template *tpl)
 
     lf->tpl = tpl ? tpl : template_autodetect(lf->buf, lf->len);
     parse_from(lf, 0);
-    lf->nvisible = lf->nents;
     return 0;
 }
 
@@ -223,6 +360,8 @@ int logfile_refresh(LogFile *lf)
         parse_appended(lf);
         return 1;
     }
+    if (lf->hp)
+        return hp_refresh(lf);
 
     fp = fopen(lf->path, "rb");
     if (!fp)
@@ -242,11 +381,12 @@ int logfile_refresh(LogFile *lf)
         free(lf->ents);
         free(lf->fspans);
         free(lf->fnums);
-        if (logfile_load(lf, path, tpl)) {
+        if (logfile_load(lf, path, tpl, 0)) {
             free(path);
             return -1;
         }
         free(path);
+        lf->refresh_from = 0;
         return 1;
     }
     if ((size_t)sz == lf->len) {
@@ -275,6 +415,17 @@ int logfile_reparse(LogFile *lf, const Template *tpl)
     size_t i, nf;
 
     lf->tpl = tpl;
+    lf->nmatched = 0;
+
+    if (lf->hp) {
+        /* nothing is stored per line: just reset visibility */
+        if (lf->visbits && lf->nents)
+            memset(lf->visbits, 0xFF, (lf->nents >> 3) + 1);
+        lf->nvisible = lf->nents;
+        lf->hp_vidx = (size_t)-1;
+        return 0;
+    }
+
     nf = (size_t)tpl->nfields;
     free(lf->fspans);
     free(lf->fnums);
@@ -282,7 +433,6 @@ int logfile_reparse(LogFile *lf, const Template *tpl)
                          sizeof *lf->fspans);
     lf->fnums = xmalloc((lf->entcap ? lf->entcap : 1) * nf *
                         sizeof *lf->fnums);
-    lf->nmatched = 0;
     for (i = 0; i < lf->nents; i++) {
         Entry *e = &lf->ents[i];
         e->matched = (unsigned char)template_match(
@@ -304,5 +454,72 @@ void logfile_free(LogFile *lf)
     free(lf->ents);
     free(lf->fspans);
     free(lf->fnums);
+    filemap_close(&lf->map);
+    free(lf->lineoff);
+    free(lf->visbits);
     memset(lf, 0, sizeof *lf);
+}
+
+/* ------------------------------------------------------------------ */
+/* entry accessors (both backends)                                     */
+
+Span logfile_raw(const LogFile *lf, size_t idx)
+{
+    Span s;
+    size_t end;
+
+    if (!lf->hp)
+        return lf->ents[idx].raw;
+
+    s.off = lf->lineoff[idx];
+    if (idx + 1 < lf->nents)
+        end = lf->lineoff[idx + 1] - 1; /* the newline */
+    else
+        end = lf->map.len - (lf->unterminated ? 0 : 1);
+    s.len = end - s.off;
+    if (s.len && lf->map.data[s.off + s.len - 1] == '\r')
+        s.len--;
+    return s;
+}
+
+void logfile_view(LogFile *lf, size_t idx, EView *v)
+{
+    if (!lf->hp) {
+        const Entry *e = &lf->ents[idx];
+        v->raw = e->raw;
+        v->lineno = e->lineno;
+        v->matched = e->matched;
+        v->cont = e->cont;
+        v->visible = e->visible;
+        v->fsp = logfile_fspans(lf, idx);
+        v->fnum = logfile_fnums(lf, idx);
+        return;
+    }
+
+    if (lf->hp_vidx != idx) {
+        Span r = logfile_raw(lf, idx);
+        lf->hp_vmatched = template_match(lf->tpl, lf->map.data + r.off,
+                                         r.len, lf->hp_fsp, lf->hp_fnum);
+        lf->hp_vidx = idx;
+    }
+    v->raw = logfile_raw(lf, idx);
+    v->lineno = idx + 1;
+    v->matched = lf->hp_vmatched;
+    v->cont = !lf->hp_vmatched && idx > 0;
+    v->visible = bit_get(lf->visbits, idx);
+    v->fsp = lf->hp_fsp;
+    v->fnum = lf->hp_fnum;
+}
+
+int logfile_is_visible(const LogFile *lf, size_t idx)
+{
+    return lf->hp ? bit_get(lf->visbits, idx) : lf->ents[idx].visible;
+}
+
+void logfile_set_visible(LogFile *lf, size_t idx, int v)
+{
+    if (lf->hp)
+        bit_set(lf->visbits, idx, v);
+    else
+        lf->ents[idx].visible = (unsigned char)v;
 }

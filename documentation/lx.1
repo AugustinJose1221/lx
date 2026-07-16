@@ -67,6 +67,17 @@ automatically, like
 On Linux and macOS this uses inotify/kqueue; elsewhere the file is
 polled.
 .TP
+.B \-H
+High\-performance mode for logs in the gigabyte range (1\-15 GB): the
+file is memory\-mapped and template\-parsed on demand instead of being
+loaded and parsed up front, keeping only 8 bytes + 1 bit of memory per
+line. All functionality (navigation, search, filters, the inspector,
+follow mode, \fB\-P\fR) works as in standard mode; applying a filter
+scans the file once, like
+.BR grep (1).
+Ignored for piped input, which has no file to map. This mode is
+planned to become the default implementation.
+.TP
 .BI \-d " n"
 In the entry inspector (\fBEnter\fR), show up to \fIn\fR wrapped lines
 per field value. Without
