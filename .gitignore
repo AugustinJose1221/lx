@@ -56,3 +56,6 @@ dkms.conf
 
 # lx build output
 build/
+
+# local test-data generator (developer helper, not shipped)
+/generate_log
